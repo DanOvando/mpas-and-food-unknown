@@ -1,6 +1,6 @@
 # Materials for "Global Effects of Marine Protected Areas on Food Security Are Unknown"
 
-This repository contains all the materials needed to reproduce the "Matters Arising" titled "Global Effects of Marine Protected Areas on Food Security Are Unknown", in response to Sala *et al.* (2021).
+This repository contains all the materials needed to reproduce the "Matters Arising" titled "Global Effects of Marine Protected Areas on Food Security Are Unknown", in response to Sala *et al.* (2021). Pre-print available [here](https://figshare.com/articles/preprint/Global_Effects_of_Marine_Protected_Areas_on_Food_Security_Are_Unknown/16709362)
 
 
 
@@ -19,7 +19,7 @@ This project has a lot of package dependencies so depending on what you already 
 Once you've successfully run `renv::restore()` you can reproduce our results by running sala-etal-food-reply.Rmd. This will knit the reply stored in sala-etal-food-reply.Rmd.
 
 
-## Running Results
+## Reproducing Results
 
 The main results are produced by `sala_etal_reply.Rmd`. The Supplementary Information is produced by `sala_etal_reply_si.Rmd`. 
 
