@@ -1,0 +1,2034 @@
+---
+title: |
+  | Global Effects of Marine Protected Areas 
+  | on Food Security Are Unknown
+output: 
+  bookdown::pdf_document2:
+    latex_engine: xelatex
+  bookdown::word_document2:
+    reference_docx: template.docx
+bibliography: references.bib
+linkcolor: blue
+urlcolor: blue
+csl: nature.csl
+toc: FALSE
+header-includes:
+  - \usepackage{setspace}\doublespacing
+  - \usepackage{lineno}\linenumbers
+params:
+  results_name: ["local_dd"] 
+  divide_stocks: [FALSE] 
+  run_regional_sala_etal: [FALSE] 
+  run_global_sala_etal: [FALSE] 
+  local_dd: [1]
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE,include = FALSE, dev = "pdf", dpi = 300)
+set.seed(225)
+# probably don't need all these but copying from Cabral et al
+library(bookdown)
+library(foreach)
+library(doParallel)
+library(raster)
+library(rgdal)
+library(maptools)
+library(dplyr)
+library(pryr)
+library(ggplot2)
+library(reshape)
+library(data.table)
+library(here)
+library(scales)
+library(tidyverse)
+library(countrycode)
+library(patchwork)
+library(devtools)
+library(ramlegacy)
+library(sf)
+library(smoothr)
+library(rnaturalearth)
+library(Rcpp)
+library(ggrepel)
+library(cowplot)
+library(furrr)
+rename <- dplyr::rename
+Rcpp::sourceCpp(here('src', "sim_mpa.cpp"))
+
+local_cores <- 6 # number of cores for parallel processing
+
+theme_set(theme_cowplot())
+
+sir_samps <- 2500 # set this to 1e9 or the like to do brute force instead of SIR
+
+PICKSIZE <- 25 #number of MPA sites selected at once
+
+results_name <- params$results_name # name of folder to store results
+
+divide_stocks <- params$divide_stocks # FALSE load up prior stock division since it takes a while, TRUE recreate it 
+
+run_regional_sala_etal <- params$run_regional_sala_etal # run local resolution experiment
+
+run_global_sala_etal <- params$run_global_sala_etal # run sala et al. version
+
+local_dd <- params$local_dd # use local density dependence (1) or pooled (0)
+
+use_ray <- TRUE # use megadata_ray or megadata
+
+pt <- 1 # use pella tomlinson model or force schaefer
+
+plim <- 0.2 # cuttoff for growth correction in pt model
+
+upsides_r <- TRUE # use upsides based growth rate or FishLife based r
+
+lower_m <- FALSE
+
+mpa_sim_years <- 50 # number of years to run MPA simulation
+
+
+
+results_path <- here("results", results_name)
+
+get_fao_data <- FALSE
+
+if (!dir.exists(results_path)){
+  dir.create(results_path, recursive = TRUE)
+}
+```
+
+```{r load data}
+
+# download data used in Cabral et al. 2020
+if (!dir.exists("data")) {
+  download.file(
+    "https://figshare.com/ndownloader/files/35063767",
+    destfile = here("tmp.zip"),
+    mode = "wb"
+  )
+  
+  unzip(here("tmp.zip")) 
+  
+  # file.rename("food-provision-data","data")
+  
+  file.remove("tmp.zip")
+  
+  if (dir.exists("__MACOSX")) {
+    unlink("__MACOSX", recursive = TRUE)
+  }
+  
+  download.file("https://github.com/rencabral/pnas-correction-food/raw/master/MegaData_Ray.rds", here("data","MegaData_Ray.rds"))
+  
+  
+}
+
+# pull in FAO capture statistics
+if (get_fao_data | !dir.exists(here("data", "fao"))) {
+  if (!dir.exists(here("data", "fao"))) {
+    dir.create(here("data", "fao"))
+    
+    download.file(
+      "http://www.fao.org/fishery/static/Data/Capture_2019.1.0.zip",
+      destfile = here("data", "fao.zip"),
+      mode = "wb"
+    )
+    
+    unzip(here("data", "fao.zip"), exdir = here("data", "fao"))
+    
+    file.remove(here("data", "fao.zip"))
+    
+    download.file(
+      "http://www.fao.org/fishery/static/ASFIS/ASFIS_sp.zip",
+      destfile = here("data", "asfis.zip"),
+      mode = "wb"
+    )
+    
+    unzip(here("data", "asfis.zip"), exdir = here("data", "fao"))
+    
+    file.remove(here("data", "asfis.zip"))
+    
+    
+  }
+  
+  
+  find_asfis <- list.files(here("data", "fao"))
+  
+  find_asfis <- find_asfis[str_detect(find_asfis,"^ASFIS.*.txt$")] # needed since years can change
+  
+  asfis <-
+    read_delim(here("data", "fao", find_asfis), delim = ",") %>%
+    janitor::clean_names() %>%
+    rename(isscaap_code = isscaap) %>%
+    select(isscaap_code, scientific_name, taxocode) %>%
+    unique()
+  
+  # major issue with NEIs here. There is no database that has both isscaap group and isscaap code, so you need
+  # to do a complicated merge based on scientific name.
+  
+  fao_capture <-
+    read_csv(here("data", "fao", "TS_FI_CAPTURE.csv")) %>%
+    janitor::clean_names() %>% 
+    mutate(country = as.integer(country),
+           fishing_area = as.integer(fishing_area))
+  
+  sp_groups <-
+    read_csv(here("data", "fao", "CL_FI_SPECIES_GROUPS.csv")) %>%
+    janitor::clean_names() %>%
+    select(x3alpha_code:identifier, contains("_en"), author:cpc_group) %>%
+    rename(species_name_en = name_en) %>%
+    left_join(asfis, by = c("taxonomic_code" = "taxocode"))
+  
+  # sp_groups %>%
+  #   group_by(x3alpha_code) %>%
+  #   summarise(ni = n_distinct(isscaap_group)) %>%
+  #   arrange(desc(ni))
+  
+  country_groups <-
+    read_csv(here("data", "fao", "CL_FI_COUNTRY_GROUPS.csv")) %>%
+    janitor::clean_names() %>%
+    mutate(un_code = as.numeric(un_code)) %>%
+    select(un_code:iso3_code, contains("_en")) %>%
+    rename(country_name_en = name_en,
+           country_official_name_en = official_name_en)
+  
+  fao_areas <-
+    read_csv(here("data", "fao", "CL_FI_WATERAREA_GROUPS.csv")) %>%
+    janitor::clean_names() %>%
+    mutate(fishing_area = as.numeric(code)) %>%
+    select(fishing_area, contains("_en"), contains("group"))
+  
+  fao_capture <- fao_capture %>%
+    left_join(sp_groups, by = c("species" = "x3alpha_code"))
+  
+  fao_capture <- fao_capture %>%
+    left_join(country_groups, by = c("country" = "un_code")) %>%
+    left_join(fao_areas, by = "fishing_area")
+  
+  fao_capture$fao_country_name <-
+    countrycode::countrycode(fao_capture$country_name_en, "country.name", "un.name.en")
+  
+  fao_capture <- fao_capture %>%
+    mutate(country = case_when(
+      is.na(fao_country_name) ~ country_name_en,
+      TRUE ~ fao_country_name
+    )) %>%
+    mutate(continent = countrycode::countrycode(country, "country.name", "continent"))
+  
+  fao_capture <- fao_capture %>%
+    rename(
+      isscaap_number = isscaap_code,
+      common_name = species_name_en,
+      capture = quantity,
+      capture_units = unit,
+      fao_area_code = fishing_area,
+      fao_area = name_en
+    ) %>%
+    mutate(fao_stock = paste(common_name, country, fao_area, sep = '_'))
+  
+  fao_capture <- fao_capture %>%
+    group_by(fao_stock) %>%
+    nest() %>%
+    ungroup() %>%
+    mutate(id = 1:nrow(.)) %>%
+    unnest(cols = data)
+  
+  fao_capture <- fao_capture %>%
+    select(id, fao_stock, everything())
+  
+  fao <- fao_capture %>%
+    filter(capture_units == "t",
+           isscaap_number < 67)
+  
+  
+  fao_stock_lookup <- fao %>%
+    select(scientific_name,
+           common_name,
+           country,
+           fao_area,
+           fao_area_code) %>%
+    unique()
+
+  
+  fao_species <- fao %>%
+    select(scientific_name, common_name, isscaap_group, isscaap_number) %>%
+    unique()
+  
+  fao_genus <-
+    str_split(fao_species$scientific_name, ' ', simplify = TRUE)[, 1]
+  
+ 
+  
+  
+  fao_genus <-  fao_species %>%
+    mutate(genus = fao_genus) %>%
+    group_by(genus, isscaap_group) %>%
+    count() %>%
+    group_by(genus) %>%
+    filter(n == max(n)) %>%
+    select(-n) %>%
+    ungroup()
+  
+  write_rds(fao_capture, file = here("data", "fao", "fao-capture.rds"))
+  
+  
+} else {
+  fao_capture <-
+    read_rds(file = here("data", "fao", "fao-capture.rds"))
+  
+  
+}
+
+# get FAO shapefile
+
+if (!dir.exists(here("data", "FAO_AREAS_NOCOASTLINE"))) {
+ 
+  download.file(url = "http://www.fao.org/fishery/geoserver/fifao/ows?service=WFS&request=GetFeature&version=1.0.0&typeName=fifao:FAO_AREAS_CWP_NOCOASTLINE&outputFormat=SHAPE-ZIP",
+                destfile = here("data", "FAO_AREAS_NOCOASTLINE.zip"))
+ 
+  
+  unzip(
+    here("data", "FAO_AREAS_NOCOASTLINE.zip"),
+    exdir = here("data", "FAO_AREAS_NOCOASTLINE")
+  )
+  
+}
+
+
+fao_areas <- sf::st_read(here('data', "FAO_AREAS_NOCOASTLINE")) %>%
+  janitor::clean_names()
+
+fao_areas <- sf::st_read(here('data', "FAO_AREAS_NOCOASTLINE"), promote_to_multi = FALSE) %>%
+  janitor::clean_names() %>% 
+  filter(f_level == "MAJOR") %>% 
+  mutate(fao_area_code = as.numeric(f_area)) #%>% 
+
+fao_areas %>% ggplot() + geom_sf()
+
+
+# land_shp_moll <- readRDS(file = here("data", "land_shp_moll.rds"))
+
+# land_shp_moll %>% 
+#   ggplot() + 
+#   geom_sf()
+
+
+land_shp_moll = rnaturalearth::ne_download(category = "physical", type = "land",scale = 110, returnclass = "sf") %>% 
+st_transform(crs = "+proj=moll")
+  
+
+# test %>% 
+#   ggplot() + 
+#   geom_sf()
+
+eezs <-
+  sf::read_sf(here("data", "World_EEZ_v11_20191118_LR", "eez_v11_lowres.shp")) %>%
+  mutate(iso3_code = countrycode(SOVEREIGN1, "country.name",  "iso3c")) %>%
+  mutate(iso3c_name = countrycode(iso3_code, "iso3c",  "country.name")) %>%
+  filter(!is.na(iso3_code)) %>%
+  sf::st_transform(sf::st_crs(land_shp_moll))
+
+
+
+
+# run results with local density dependence and at local resolution
+
+# redo with corrected ram -------------------------------------------------
+
+scenario <- "BAU1"
+
+MegaData <- readRDS(file = here("data", "MegaData.rds"))
+
+og_mega_data <- MegaData
+
+
+Cleanmegacell <-
+  readRDS(file = here("data", "Cleanmegacell_mollweide.rds"))
+
+CleanCoordmegacell <-
+  readRDS(file = here("data", "CleanCoordmegacell_mollweide.rds"))
+
+KprotectedPerCell_Library <-
+  readRDS(file = here("data", "KprotectedPerCell_Library_mollweide.rds"))
+
+dimnames(KprotectedPerCell_Library) <- list(MegaData$stockid, 1:ncol(KprotectedPerCell_Library))
+
+dimnames(Cleanmegacell) <- list(1:nrow(Cleanmegacell),MegaData$stockid)
+
+megadata_ray <- readRDS(file = here("data", "MegaData_ray.rds")) %>% 
+  filter(INCLUDE == 1)
+
+
+if (use_ray){
+  
+  MegaData <- readRDS(file = here("data", "MegaData_ray.rds")) %>%
+    filter(INCLUDE == 1,
+           stockid %in% unique(MegaData$stockid)) # because access is not provided for the underlying habitat layers, have to match it down to stocks with match in origial MegaData
+
+  og_mega_data <- readRDS(file = here("data", "MegaData_ray.rds")) %>%
+    filter(INCLUDE == 1)
+
+  
+  KprotectedPerCell_Library <- KprotectedPerCell_Library[MegaData$stockid,]
+  
+  Cleanmegacell <- Cleanmegacell[,MegaData$stockid]
+
+
+}
+
+MPA_coord <-
+  readRDS(file = here("data", "MPA_coord_mollweide.rds")) #this is my code
+
+# load upsides
+
+upsides <-
+  read_csv(here("data", "upsides", "ProjectionData.csv")) %>%
+  janitor::clean_names()
+
+upsides$g <- pmin(upsides$g, 1.6) # weird things start to happen at higher values
+
+phi <- unique(upsides$phi)
+
+if (n_distinct(phi) > 1){
+  stop("Multiple phis present, assign individually to each stock")
+}
+
+# pull in RAM data
+
+if (file.exists(here("data", "ram.zip")) == FALSE) {
+
+  download.file("https://zenodo.org/record/4824192/files/RAMLDB%20v4.495.zip?download=1", destfile = here("data","ram.zip"),      mode = "wb"
+)
+  
+  unzip(here("data","ram.zip"), exdir = here("data","ram"))
+}
+
+
+ram_files <- list.files(here("data","ram","R Data"))
+
+ram_files <- ram_files[str_detect(ram_files,".RData")]
+
+load(here("data","ram","R Data",ram_files))
+
+# the correct attribute to pull for food security is UdivUmsypref
+ram_bau <-
+  timeseries_values_views %>% 
+  dplyr::select(stockid, year, UdivUmsypref) %>%
+  janitor::clean_names() %>%
+  group_by(stockid) %>%
+  filter(!is.na(udiv_umsypref)) %>%
+  filter(year == max(year)) %>%
+  dplyr::select(-year) %>% 
+  mutate(udiv_umsypref = pmin(2,udiv_umsypref)) # for consistencey of comparison, cap U/UMSY at 2 (even though can be higher in EQ under PT)
+
+
+ram_msy <- 
+
+assessid_to_stockid <- assessment %>% 
+  select(assessid, stockid)
+
+upsides_ram_data <- upsides %>% 
+  filter(dbase == "RAM",
+         policy == "Historic") 
+
+# sigh. stockid is in confusing places, but seems to always be before year. So, here we go
+
+get_stockid <- function(x){
+  
+    a = str_extract(x, "((?<=\\-).*?)(?=\\-\\d)") # give me everything after a dash and before the first digit after a dash
+
+}
+
+stockids <- map_chr(upsides_ram_data$id_orig, get_stockid) #annoying and very outdated issue with upsides using assessid that no longer exist
+
+upsides_ram_data$stockid <- stockids #stockid is second column
+
+  # left_join(assessid_to_stockid, by = c("id_orig" = "assessid")) %>% 
+upsides_ram_data <- upsides_ram_data %>%
+  select(stockid, g, msy, k) %>%
+  unique()
+
+# Update RAM stocks with most recent assessment values
+
+MegaData <- MegaData %>%
+  left_join(ram_bau, by = "stockid")
+
+MegaData$u_bau_ram <-  MegaData$udiv_umsypref * (MegaData$r / 2) # calculate u given MegaData growth rate and RAM U/UMSY
+
+MegaData$Efin_BAU1[MegaData$Manage == 1 & !is.na(MegaData$udiv_umsypref)] <- 1 - MegaData$u_bau_ram[MegaData$Manage == 1 & !is.na(MegaData$udiv_umsypref)] # convert to escapement for reasons that escape me. For RAM stocks that don't have a match, stick with old upsides methods... 
+
+# filter down to candidate stocks
+# candidate stocks have exact matches for RAM, or have a species match for unassessed
+# Also, removing problem trachurus trachurus stock
+
+
+upsides_sciname <- upsides %>% 
+  filter(dbase == "FAO") %>% 
+  select(sci_name) %>% 
+  unique()
+
+unassessed_trachurus <- MegaData %>% 
+  filter(str_detect(SciName, 'Trachurus trachurus'))
+
+viable <-
+  which(
+    (MegaData$Manage == 1 & !is.na(MegaData$Efin_BAU1)) |
+      (
+        (MegaData$SciName %in% upsides_sciname$sci_name) &
+          MegaData$Manage == 0
+      ) & MegaData$stockid != unassessed_trachurus$stockid
+  )
+
+
+check <- MegaData[viable,]
+# filter all the things down to only the stocks that have a viable match in the upsides
+
+MegaData <- MegaData[viable,]
+
+KprotectedPerCell_Library <- KprotectedPerCell_Library[viable,]
+
+Cleanmegacell <- Cleanmegacell[,viable]
+
+baseline_megadata <- MegaData
+
+baseline_k <- KprotectedPerCell_Library
+
+baseline_clean <- Cleanmegacell
+
+
+# go through and first do the Pella-Tomlinson conversion for just the RAM stocks
+# Ends up being much easier to do the unassesesd after
+if (pt == 1){
+  
+  MegaData <- MegaData %>% 
+    left_join(upsides_ram_data, by= "stockid")
+  
+  MegaData$uvumsy_ram_tmp <- (1 - MegaData$Efin_BAU1) / (MegaData$r/2) # keep track of target U/UMSY
+
+  
+  MegaData$g[is.na(MegaData$g)] <- (MegaData$r / ((phi + 1) / phi))[is.na(MegaData$g)] # following Costello et al. 2016, for subset of stocks that look like were added in to MegaData post RAM
+
+  
+  MegaData$u_bau_ram <-  MegaData$uvumsy_ram_tmp * (MegaData$g) # Pella-Tomlinson so g = Fmsy in this formulation
+  
+  ogr <- MegaData$r
+  
+  MegaData$r[MegaData$Manage == 1] <- MegaData$g[MegaData$Manage == 1] # just to keep the rest of the code sane, "g" is now "r"
+
+  MegaData$Kfin[MegaData$Manage == 1] <-
+    ((MegaData$MSYfin * ((phi + 1) ^ (1 / phi))) / MegaData$r)[MegaData$Manage == 1] # adjust K to preserve MSY given PT parameters
+  
+  # check <- (MegaData$r * MegaData$Kfin) /  ((phi + 1)^(1 / phi))
+  # 
+  # plot(check, MegaData$MSYfin)
+  # abline(a = 0, b = 1)
+  # 
+  MegaData <- MegaData %>% 
+    select(-g, -msy, -k) # remove upsides thing to avoid confusion
+
+  
+}
+
+MegaData$ram_escapement_bau = 1 - MegaData$u_bau_ram
+
+MegaData %>%
+  filter(Manage == 1) %>%
+  ggplot(aes(Efin_BAU1, ram_escapement_bau)) +
+  geom_point() +
+  geom_abline(slope = 1, intercept = 0)
+
+MegaData$Efin_BAU1[MegaData$Manage == 1] <-
+  MegaData$ram_escapement_bau[MegaData$Manage == 1]
+
+MegaData %>%
+  filter(Manage == 1) %>%
+  ggplot(aes(Efin_BAU1, ram_escapement_bau)) +
+  geom_point() +
+  geom_abline(slope = 1, intercept = 0)
+
+
+if (nrow(MegaData) != nrow(KprotectedPerCell_Library)){
+  stop("megadata and k library not same size")
+}
+
+
+# Prepare to split apart and generate the unassessed stocks
+
+# pull out the BAU policy for the upsides
+upsides_bau <- upsides %>%
+  filter(policy == "BAU",
+         scenario == "Con. Concern") %>%
+  filter(year == max(year)) %>%
+  dplyr::rename(bvbmsy_upsides = bv_bmsy,
+                fvfmsy_upsides = fv_fmsy) %>%
+  mutate(manage = ifelse(dbase == "FAO", 0, 1))
+
+upsides_bau$iso3_country_code <-
+  countrycode::countrycode(upsides_bau$country, "country.name", "iso3c")
+
+upsides_bau$iso3_country_name <-
+  countrycode::countrycode(upsides_bau$iso3_country_code, "iso3c", "country.name")
+
+# get unassessed for megadata
+ua_megadata <- MegaData %>%
+  filter(Manage == 0)
+
+
+# get unassessed from upsides
+
+ua_upsides_bau <- upsides_bau %>%
+  filter(sci_name %in% unique(ua_megadata$SciName),
+         dbase == "FAO",
+         id_level == "Species")
+
+mean(tolower(unique(ua_megadata$SciName)) %in% tolower(unique(ua_upsides_bau$sci_name)))
+# there are some stocks that for some reason MegaData marks as unmanaged but are in RAM
+
+
+tmp <- CleanCoordmegacell %>%
+  sf::st_as_sf(coords = c("lon", "lat"),
+               crs = sf::st_crs(land_shp_moll))
+# assign stocks to local resolution defined by upsides stocks
+divide_stock <-
+  function(stock,
+           MegaData,
+           KprotectedPerCell_Library,
+           tmp,
+           upsides_r,
+           pt) {
+    upsides_country <- stock$country[1]
+    
+    taxa <- stock$sci_name[1]
+    
+    tmp_eez_code <- stock$iso3_country_code[1]
+    
+    tmp_fao_area_code <- stock$region_fao[1]
+    
+    tmp_mega <- ua_megadata %>%
+      filter(SciName == taxa)
+    
+    # generate map:
+    # pull out the row for that taxa from Kprotected....
+    # convert to shapefile and mask with EEZ and FAO region
+    # set habitat to zero in all cells outside of intersected area
+    # return row
+    
+    global_occurance <-
+      as.numeric(KprotectedPerCell_Library[which(MegaData$SciName == taxa &
+                                                   MegaData$Manage == 0)[1], ])
+    
+    tmp$habitat <- global_occurance
+    
+    tmp_eez <- eezs %>%
+      filter(iso3_code == tmp_eez_code)
+    
+    tmp_fao <- fao_areas %>%
+      filter(fao_area_code == tmp_fao_area_code) %>%
+      sf::st_transform(sf::st_crs(land_shp_moll))
+    
+    
+    tmp_layer <- st_intersects(tmp, tmp_eez, sparse = FALSE)
+    
+    tmp_eez_layer <- apply(tmp_layer, 1, any)
+    
+    tmp_layer <- st_intersects(tmp, tmp_fao, sparse = FALSE)
+    
+    tmp_fao_layer <- apply(tmp_layer, 1, any)
+    
+    if (upsides_country == "Multinational") {
+      mask <- tmp_fao_layer
+      
+    } else {
+      mask <- tmp_eez_layer & tmp_fao_layer
+      
+      if (all(mask == FALSE)) {
+        mask <- tmp_fao_layer
+      }
+      
+    }
+    
+    stock_occurance <- global_occurance
+    
+    stock_occurance[!mask] <- 0
+    
+    if (sum(stock_occurance) == 0) {
+      stock_occurance[mask] <- 1 # this checks for places with reported catch at the eez fao region level but no aquamaps abundance
+    }
+    
+    # test <- t(as.matrix(stock_occurance))
+    
+    tmp %>%
+      mutate(init = tmp_layer & tmp_fao_layer,
+             hab = stock_occurance) %>%
+      ggplot(aes(color = init))+
+      geom_sf()
+    
+    # stock_occurance <- t(as.matrix(stock_occurance / sum(stock_occurance, na.rm = TRUE)))
+    
+    stock_occurance <-
+      (stock_occurance / sum(stock_occurance, na.rm = TRUE))
+    
+    if (any(is.na(stock_occurance))) {
+      stop()
+    }
+    # OK that generates a habitat layer for that specific stock
+    
+    # now update "MegaData" with the correct
+    # MSYfin
+    # Efin_BAU1
+    # The BAU exploitation rate for the unassessed stocks appears to be set such that B/B~MSY~ BAU equals the MSY weighted mean B/B~MSY~ BAU from Costello et al. 2016
+    
+    
+    if (pt == 0){
+    if (upsides_r == TRUE){ # keep upsides MSY and K, and then solve for logistic r
+    
+    tmp_mega$MSYfin <- stock$msy
+    
+    tmp_mega$Kfin <- stock$k
+    
+    tmp_mega$r <-
+      stock$msy * 4 / stock$k # hacky conversion from PT to Schaefer. We use this r instead of the same r due tot eh fact that different stocks of the same species can have different growth rates in the upsides. Hacky because MSY and K are a function of growth rate in PT model, but gets as close as possible
+    } else {
+
+    # keep upsides MSY but MegaData r and solve for local k
+       
+    tmp_mega$MSYfin <- stock$msy
+
+    tmp_mega$Kfin <- (stock$msy * 4) / tmp_mega$r
+      
+    }
+      
+    f_fmsy_bau <- 2 - min(2, stock$bvbmsy_upsides)
+    
+    tmp_mega$Efin_BAU1 <- 1 - f_fmsy_bau * (tmp_mega$r / 2)
+
+    } else {
+      
+    tmp_mega$MSYfin <- stock$msy
+
+    tmp_mega$Kfin <- stock$k
+
+    tmp_mega$r <- pmin(1,stock$g) # PT model starts to do weird things above 1, and since fmsy = g, g >1 means overfishing is impossible
+    
+    phi <- stock$phi
+    
+    f_fmsy_bau <- (phi + 1) / phi * (1 - (stock$bvbmsy_upsides)^phi / (phi + 1)) # assume B is at EQ, I believe that's what they did for megadata
+    
+    tmp_mega$Efin_BAU1 <- 1 - f_fmsy_bau * tmp_mega$r # pella tomlinson fmsy = g
+
+    } # close ifelse pt
+ 
+    out <- list(tmp_mega = tmp_mega, temp_occurance = stock_occurance)
+  }
+
+if (divide_stocks |
+    (!file.exists(file.path(results_path, "divided-stocks.rds")))) {
+
+  plan(multisession, workers = 6)
+
+  divided_stocks <- ua_upsides_bau %>%
+    group_by(id_orig) %>%
+    nest() %>%
+    ungroup() %>%
+    mutate(
+      ds = future_map(
+        data,
+        divide_stock,
+        MegaData = MegaData,
+        KprotectedPerCell_Library = KprotectedPerCell_Library,
+        tmp = tmp,
+        upsides_r = upsides_r,
+        pt = pt,
+        .progress = TRUE
+      )
+    )
+  
+  write_rds(divided_stocks, file.path(results_path, "divided-stocks.rds"))
+  
+} else {
+  divided_stocks <- read_rds(file.path(results_path, "divided-stocks.rds"))
+  
+}
+
+
+baseline_megadata %>% 
+  group_by(Manage) %>% 
+  count()
+
+MegaData %>% 
+  group_by(Manage) %>% 
+  summarise(n = n_distinct(stockid))
+
+ram_stocks <- MegaData %>%
+  filter(Manage == 1)
+
+ram_range <- KprotectedPerCell_Library[which(MegaData$Manage == 1), ]
+
+
+# create unassessed
+
+divided_megadata <- map_df(divided_stocks$ds, "tmp_mega")
+
+if (pt == 1){
+  
+    divided_megadata$MSYfin <- ua_upsides_bau$msy
+
+    divided_megadata$Kfin <- ua_upsides_bau$k
+
+    divided_megadata$r <- ua_upsides_bau$g
+    
+    f_fmsy_bau <- (phi + 1) / phi * (1 - (ua_upsides_bau$bvbmsy_upsides)^phi / (phi + 1)) # assume B is at EQ, I believe that's what they did for megadata
+    
+  divided_megadata$Efin_BAU1 <- 1 - f_fmsy_bau * divided_megadata$r # pella tomlinson fmsy = g
+
+  # plot(ua_upsides_bau$bvbmsy_upsides, f_fmsy_bau)
+  
+  # plot(ua_upsides_bau$bvbmsy_upsides, (1 - divided_megadata$Efin_BAU1) / divided_megadata$r)
+
+}
+
+divided_k <-
+  matrix(
+    NA,
+    nrow = nrow(divided_megadata),
+    ncol = ncol(KprotectedPerCell_Library)
+  )
+
+for (i in 1:nrow(divided_stocks)) {
+  if (any(is.na(as.numeric(divided_stocks$ds[[i]]$temp_occurance)))) {
+    stop("something very bad has happened")
+  }
+  divided_k[i, ] <-
+    as.numeric(divided_stocks$ds[[i]]$temp_occurance) # much faster this way
+  
+}
+
+
+
+# knit it all together
+
+MegaData <- ram_stocks %>%
+  bind_rows(divided_megadata)
+
+
+KprotectedPerCell_Library <- ram_range %>%
+  as.matrix() %>%
+  rbind(divided_k)
+
+rm(divided_k)
+
+# make sure that your baseline matches the stocks that actually gets run on the local stocks
+
+baseline_megadata <- baseline_megadata[baseline_megadata$stockid %in% unique(MegaData$stockid),]
+
+baseline_k <- baseline_k[baseline_megadata$stockid,]
+
+baseline_megadata %>% 
+  group_by(Manage) %>% 
+  count()
+
+MegaData %>% 
+  group_by(Manage) %>% 
+  summarise(n = n_distinct(stockid))
+
+```
+
+
+```{r regional-res}
+
+
+#get MPA positions
+CleanCoordmegacell_MPA <-
+  left_join(CleanCoordmegacell, MPA_coord, by = c("lon", "lat"))
+head(CleanCoordmegacell_MPA)
+dim(CleanCoordmegacell_MPA)
+sum(CleanCoordmegacell_MPA$MPA, na.rm = T)
+
+#positions of 1s (MPAs)
+MPAposition <- which(CleanCoordmegacell_MPA$MPA == 1)
+head(MPAposition)
+length(MPAposition)#2931 --- 2.44% are MPAs
+length(MPAposition) * 100 / dim(Cleanmegacell)[1]
+
+##TRY new approach
+numcell <- dim(Cleanmegacell)[1]
+celltoiterateFULL <- 1:numcell
+MPAselect0 <- matrix(0, nrow = numcell, ncol = 1)
+PriorityAreas <- c()
+NetworkResult <- vector()
+
+#Make MPAselect0==1 for MPAs
+MPAselect0[MPAposition] <- 1
+head(MPAselect0)
+sum(MPAselect0)
+
+#remove MPAs from celltoiterateFULL
+celltoiterateFULL <- celltoiterateFULL[-MPAposition]
+celltoiterate <- celltoiterateFULL
+ncell <- length(celltoiterate)
+
+###Compute spillover---PIXEL-LEVEL spillover
+###
+if (lower_m == TRUE){
+  MegaData$m <-  MegaData$m  * .5
+}
+
+K <- MegaData$Kfin # K per species
+m <- MegaData$m # mobility per species
+r <- MegaData$r
+
+
+if (any(is.na(r) | is.na(phi))){
+  stop("something has gone wrong with life history")
+}
+
+
+# phi <- MegaData$phi
+
+
+if (scenario == "all managed") {
+  E <- MegaData$Emsy
+} else if (scenario == "OAconstant") {
+  E <- MegaData$Efin
+} else if (scenario == "BAU1") {
+  E <- MegaData$Efin_BAU1
+} else if (scenario == "Efin_msy") {
+  E <- MegaData$Efin_msy
+} else if (scenario == "EBvK01fin") {
+  E <- MegaData$EBvK01fin
+}
+min(E)
+# why is there negative escapement?????
+ER <- 1 - E
+ER <- 1 * (ER > 1) + ER * (ER <= 1)
+
+
+hist(ER[MegaData$Manage == 0] / MegaData$r[MegaData$Manage == 0])
+
+max(ER)
+min(ER)
+
+
+MPAselect <- MPAselect0
+R <- pmax(1e-6,pmin(0.999,rowSums(KprotectedPerCell_Library[, which(MPAselect == 1), drop = FALSE])))
+
+ER_redistribute <- pmin(0.999,1 - (1 - ER) ^ (1 / (1 - R)))
+
+b_outside_bau <-
+  ((m * K * (1 - R)) / (ER_redistribute * R + m)) * (1 - (ER_redistribute * (1 - R) * m) /
+                                                       ((ER_redistribute * R + m) * r))
+
+hbau <-
+  na.omit(ER_redistribute * ((m * K * (1 - R)) / ((ER_redistribute * R) +
+                                                    m)) * (1 - ((
+                                                      ER_redistribute * (1 - R) * m
+                                                    ) / (((ER_redistribute * R) + m
+                                                    ) * r))))
+hbau <- hbau * (hbau > 0)
+HBAU <- sum(hbau)
+HBAU
+
+
+
+nmax <- floor(length(celltoiterate) / PICKSIZE)
+nmax #this is the number of iterations needed for PICKSIZE at a time!
+
+Eevolve <- matrix(nrow = nmax, ncol = dim(MegaData)[1])
+# k_per_cell <- t(as.datKprotectedPerCell_Library)
+dhmpa_stockish <-
+  matrix(NA,
+         nrow = nmax,
+         ncol = nrow(KprotectedPerCell_Library))
+
+missing <-
+  nrow(MegaData[MegaData$Manage == 1, ]) / nrow(og_mega_data[og_mega_data$Manage == 1, ])
+
+missing_stocks <-
+  og_mega_data$stockid[!og_mega_data$stockid %in% MegaData$stockid]
+
+n_missing = nrow(og_mega_data) - nrow(MegaData)
+
+p_msy_missing = sum(MegaData$MSYfin) / sum(og_mega_data$MSYfin)
+
+bau <-
+  sim_mpa(
+    r = r,
+    k = K,
+    m = m,
+    u = ER_redistribute,
+    p_mpa = R,
+    local_dd = local_dd,
+    years = mpa_sim_years,
+    phi = phi, 
+    pt = pt,
+    plim = plim
+  )
+
+if (any(is.na(bau))){
+  stop("something has gone wrong with BAU")
+}
+
+bad <- which(is.na(bau))
+sum(bau) / HBAU
+
+# sum(bau$outside_b) /  sum(b_outside_bau)
+
+HBAU <- sum(bau)
+
+upsides_megadata <- MegaData
+
+write_rds(upsides_megadata, file.path(results_path, "upsides_megadata.rds"))
+
+if (nrow(MegaData) != nrow(KprotectedPerCell_Library)){
+  stop("megadata and k library not same size")
+}
+print(paste0(n_distinct(MegaData$stockid)," distinct stocks"))
+
+if (run_regional_sala_etal) {
+  
+  sirframe <- data.frame(cell = celltoiterate,
+                       weight = 0)
+  
+  
+registerDoParallel(local_cores)
+
+  for (i in 1:nmax) {
+    MPAselectPrev <-
+      rowSums(KprotectedPerCell_Library[, which(MPAselect0 == 1), drop = FALSE])
+    # a <- Sys.time()
+    result <-
+      foreach(iter = 1:length(celltoiterate),
+              .combine = rbind) %dopar% {
+                MPAselect <- MPAselect0
+                MPAselect[celltoiterate[iter]] <- 1
+                R <-
+                  pmax(1e-6,pmin(0.999,MPAselectPrev + KprotectedPerCell_Library[, celltoiterate[iter]]))
+                
+                
+                ER_redistribute <- pmin(0.999,1 - (1 - ER) ^ (1 / (1 - R)))
+                
+                
+                results <-
+                  sim_mpa(
+                    r = r,
+                    k = K,
+                    m = m,
+                    u = ER_redistribute,
+                    p_mpa = R,
+                    local_dd = local_dd,
+                    years = mpa_sim_years,
+                    phi = phi,
+                    pt = pt,
+                    plim = plim
+                  )
+                
+                HMPA <- sum(results, na.rm = TRUE)
+                
+                
+                HMPA - HBAU
+              }
+    # Sys.time() - a
+    if (length(result) != length(celltoiterate)){
+      stop("Ubuntu memory leak - try reducing cores and try again")
+    }
+    
+    #1. find the location of the top 1000 highest pixel-level
+    myorderHightoLow <- order(-result)#positions
+    cellselected <-
+      myorderHightoLow[1:PICKSIZE] #but these are the position of the temporary pixels, not our reference pixels
+    #convert coord to scale comparable to priority areas
+    Prioritycellselected <- celltoiterate[cellselected]
+    
+    #3. block those additional 100 in MPAselect
+    MPAselect0[Prioritycellselected] <- 1
+    
+    #4. save them for our priority areas
+    PriorityAreas <- append(PriorityAreas, Prioritycellselected)
+    
+    #5. Calculate food prov of the additional 100 cells
+    MPAselect <- MPAselect0
+    R <-
+      pmax(1e-6,pmin(0.999,rowSums(KprotectedPerCell_Library[, which(MPAselect == 1), drop = FALSE])))
+    
+    ER_redistribute <- pmin(0.999,1 - (1 - ER) ^ (1 / (1 - R)))
+    
+    
+    new_results <-
+      sim_mpa(
+        r = r,
+        k = K,
+        m = m,
+        u = ER_redistribute,
+        p_mpa = R,
+        local_dd = local_dd,
+        years = mpa_sim_years,
+        phi = phi,
+        pt = pt,
+        plim = plim
+      )
+    
+    new_results[is.na(new_results)] <- 0
+    
+    HMPA <- sum(new_results, na.rm = TRUE)
+    
+    #save result. Comment other parts not needed now.
+    NetworkResult[i] <- HMPA - HBAU
+
+    Eevolve[i, ] <- ER_redistribute
+    
+
+  sirframe$weight[sirframe$cell == celltoiterate] <- as.numeric(result)
+  
+  candidates <- celltoiterateFULL[!celltoiterateFULL %in% PriorityAreas]
+
+  samps <- min(sir_samps, length(candidates))
+  
+  tmp_frame <- sirframe[sirframe$cell %in% candidates,]
+  
+  celltoiterate <- sample(tmp_frame$cell,size = samps, replace = FALSE, prob = tmp_frame$weight - min(tmp_frame$weight) + 1e-3)
+  
+    
+    print(c(i, NetworkResult[i]))
+    rm(
+      result,
+      myorderHightoLow,
+      cellselected,
+      Prioritycellselected,
+      MPAselect,
+      R,
+      hmpa,
+      HMPA
+    )
+  }
+  plot(NetworkResult)
+
+  if (scenario == "BAU1") {
+    saveRDS(
+      NetworkResult,
+      file = file.path(
+        results_path,
+        "local_dd_downscaled_corrected_NetworkResult100_BAU1_mollweide.rds"
+      )
+    )
+    saveRDS(
+      PriorityAreas,
+      file = file.path(
+        results_path,
+        "local_dd_downscaled_corrected_PriorityAreas100_BAU1_mollweide.rds"
+      )
+    )
+    
+      saveRDS(
+      Eevolve,
+      file = file.path(
+        results_path,
+        "local_exploitation_rate.rds"
+      )
+    )
+    
+    # saveRDS(dhmpa_stockish,
+    #         file = file.path(results_path, "downscaled_corrected_stockish_results_bau1.rds"))
+  } else if (scenario == "all managed") {
+    saveRDS(NetworkResult, file = "~/foodGCEfile/NetworkResult100_allmanaged_redistribute.rds")
+    saveRDS(PriorityAreas, file = "~/foodGCEfile/PriorityAreas100_allmanaged_redistribute.rds")
+  } else if (scenario == "OAconstant") {
+    saveRDS(NetworkResult, file = "~/foodGCEfile/NetworkResult100_OAconstant_mollweide_redistribute.rds")
+    saveRDS(PriorityAreas, file = "~/foodGCEfile/PriorityAreas100_OAconstant_mollweide_redistribute.rds")
+  } else if (scenario == "EBvK01fin") {
+    saveRDS(NetworkResult, file = "~/foodGCEfile/NetworkResult100_EBvK01fin_mollweide_redistribute.rds")
+    saveRDS(PriorityAreas, file = "~/foodGCEfile/PriorityAreas100_EBvK01fin_mollweide_redistribute.rds")
+  }
+  
+  
+} else {
+  NetworkResult <-
+    readRDS(
+      file = file.path(
+        results_path,
+        "local_dd_downscaled_corrected_NetworkResult100_BAU1_mollweide.rds"
+      )
+    )
+  
+  PriorityAreas <-
+    readRDS(
+      file = file.path(
+        results_path,
+        "local_dd_downscaled_corrected_PriorityAreas100_BAU1_mollweide.rds"
+      )
+    )
+  
+}
+
+# PICKSIZE <- 100
+BenefitCurve <- as.data.frame(NetworkResult) / 1000000
+MPAsize <- (length(MPAposition) + 1) * 100 / dim(Cleanmegacell)[1]
+#(MPAinEEZ+1)*100/length(EEZposition)#there is +1 because the next pixel starts with +1
+BenefitCurve$MPA <- rescale(seq.int(nmax), to = c(MPAsize, 100))
+zerozero <- data.frame(0, 0)
+names(zerozero) <- c("NetworkResult", "MPA")
+zerozero[1, ] <- c(-HBAU / (1000000), 100)
+BenefitCurve <- rbind(BenefitCurve, zerozero)
+corrected_benefitplot <-
+  ggplot(BenefitCurve, aes(MPA, NetworkResult)) + geom_line(col = "blue") +
+  # theme_classic()+
+  labs(
+    x = "% EEZ protected",
+    y = "Change in catch (MMT)",
+    title = paste("Global (max =", round(max(
+      BenefitCurve$NetworkResult
+    ), 2), "MMT)")
+  )#+geom_hline(yintercept = 0)
+corrected_benefitplot
+
+Priority <- as.data.frame(PriorityAreas)
+Priority$rank <- ((seq.int(nrow(Priority)) / ncell)) * 100
+
+#add dh
+NetworkResult_prime <- as.data.frame(NetworkResult)
+dH_prime <-
+  NetworkResult_prime %>% mutate(dH = NetworkResult - lag(NetworkResult, default = 0))
+plot(dH_prime$dH)
+Priority$NetworkResult <-
+  rep(NetworkResult, each = PICKSIZE) ## this is adding delta H
+Priority$dH <-
+  rep(dH_prime$dH / PICKSIZE, each = PICKSIZE) ## this is adding delta H
+head(Priority)
+dim(Priority)
+
+PriorityFrame <- as.data.frame(seq.int(nrow(CleanCoordmegacell)))
+names(PriorityFrame) <- "PriorityAreas"
+#add the priority
+PriorityFrame2 <-
+  left_join(PriorityFrame, Priority, by = "PriorityAreas")
+PriorityFrame2[is.na(PriorityFrame2)] <- 0
+head(PriorityFrame2)
+dim(PriorityFrame2)
+
+ShortCoord <- CleanCoordmegacell
+ShortCoord$rank <- PriorityFrame2$rank
+ShortCoord$NetworkResult <-
+  PriorityFrame2$NetworkResult#this is for deriving dh
+ShortCoord$dH <- PriorityFrame2$dH#this is for deriving dh
+ShortCoord$ID <- row.names(ShortCoord)
+
+dim(ShortCoord)
+head(ShortCoord)
+
+ShortCoord_Sort <-
+  ShortCoord[order(-ShortCoord$rank), ] %>% filter(rank != -1000)
+
+ShortCoord_Sort$sign <- ShortCoord_Sort$dH > 0
+InflectPoint <- min(which(ShortCoord_Sort$sign == TRUE))
+InflectMPA <- ShortCoord_Sort$rank[InflectPoint]
+
+# this is broken becuase of the ranking plot error
+corrected_MPAcoverage <-
+  ShortCoord_Sort %>% ggplot(aes(x = lon, y = lat, fill = rank)) + #scale_fill_gradient2(low="darkred", mid="white",high="#00539CFF",midpoint = 0, space = "Lab",na.value = "grey50", guide = "colourbar", aesthetics = "fill",name=expression(paste(Delta, "H (MT)")))+
+  scale_fill_gradientn(
+    colours = c("forestgreen", "white", "orange"),
+    limits = c(0, 100),
+    values = scales::rescale(c(
+      min(ShortCoord_Sort$rank),
+      InflectMPA,
+      max(ShortCoord_Sort$rank)
+    )),
+    name = "Protection sequence"
+  ) +
+  theme(
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank(),
+    panel.background = element_blank(),
+    legend.position = c(0.63, 0.05),
+    legend.direction = "horizontal"
+  ) + #"bottom
+  geom_tile() +
+  geom_raster(data = MPA_coord, aes(x = lon, y = lat), fill = "cyan") +  #"#EEA47FFF"
+  geom_sf(
+    data = land_shp_moll,
+    fill = "black",
+    lwd = 0,
+    inherit.aes = F
+  ) + theme(panel.grid.major = element_line(colour = 'transparent'))
+corrected_MPAcoverage
+
+
+corrected_MPAcoverage2 <-
+  ShortCoord_Sort %>% ggplot(aes(x = lon, y = lat, fill = rank)) + 
+  scale_fill_viridis_c(direction = -1) +
+  theme(
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank(),
+    panel.background = element_blank(),
+    legend.position = c(0.63, 0.05),
+    legend.direction = "horizontal"
+  ) + #"bottom
+  geom_tile() +
+  geom_raster(data = MPA_coord, aes(x = lon, y = lat), fill = "cyan") +  #"#EEA47FFF"
+  geom_sf(
+    data = land_shp_moll,
+    fill = "black",
+    lwd = 0,
+    inherit.aes = F
+  ) + theme(panel.grid.major = element_line(colour = 'transparent'))
+corrected_MPAcoverage2
+
+
+k_protected <- matrix(rep(MegaData$Kfin,ncol(KprotectedPerCell_Library)), ncol = ncol(KprotectedPerCell_Library), nrow = nrow(MegaData))
+
+k_per_cell <- colSums(k_protected * KprotectedPerCell_Library)
+
+ShortCoord_Sort$k <- as.numeric(k_per_cell[as.numeric(ShortCoord_Sort$ID)])
+
+local_cell_priorities <- ShortCoord_Sort
+
+corrected_megadata <- MegaData
+
+corrected_better_benefit_plot <- ShortCoord_Sort %>% 
+  arrange(rank) %>% 
+  mutate(percent_k = cumsum(k) / sum(k),
+         yield_effect =  cumsum(dH) / 1e6) %>% 
+  ggplot(aes(percent_k, yield_effect)) + 
+  geom_vline(aes(xintercept = 0.3), linetype = 2)+
+  geom_hline(aes(yintercept = 0), linetype = 1)+
+  geom_line(color = "tomato", size = 1.5) + 
+  scale_x_continuous(labels = percent, name = "% of K in MPA") + 
+  scale_y_continuous(name = "Change in Global Yield (MMT)") +
+  labs(subtitle = glue::glue("Max Benefit = {round(max(cumsum(rev(ShortCoord_Sort$dH))) / 1e6,2)} MMT"))
+
+
+```
+
+```{r global-res}
+
+# replicate results from sala et al, either approximating as corrected version of cabral et al, or hopefully actually getting the data
+
+
+##SELECT SCENARIO --- there are four scenarios
+
+if (any(!(unique(upsides_megadata$stockid) %in% unique(baseline_megadata$stockid)))){
+  stop("mismatch in stocks between local and global resolution datasets")
+}
+
+
+#Load MOLLWEIDE projected data
+MegaData<- baseline_megadata
+
+Cleanmegacell<- baseline_clean
+
+CleanCoordmegacell<-readRDS(file = here("data","CleanCoordmegacell_mollweide.rds"))
+
+KprotectedPerCell_Library<- baseline_k
+
+MPA_coord<-readRDS(file= here("data","MPA_coord_mollweide.rds")) #this is my code
+
+
+if (nrow(MegaData) != nrow(KprotectedPerCell_Library)){
+  stop("error: megadata and k library aren't same size")
+}
+
+
+#get MPA positions
+CleanCoordmegacell_MPA<-left_join(CleanCoordmegacell,MPA_coord,by=c("lon","lat"))
+
+#positions of 1s (MPAs)
+MPAposition<-which(CleanCoordmegacell_MPA$MPA==1)
+
+##TRY new approach
+numcell<-dim(Cleanmegacell)[1]
+celltoiterateFULL<-1:numcell
+MPAselect0<-matrix(0, nrow=numcell, ncol=1)
+PriorityAreas<-c()
+NetworkResult<-vector()
+
+#Make MPAselect0==1 for MPAs
+MPAselect0[MPAposition]<-1
+#remove MPAs from celltoiterateFULL
+celltoiterateFULL<-celltoiterateFULL[-MPAposition]
+celltoiterate<-celltoiterateFULL
+ncell<-length(celltoiterate)
+
+# match up global scale megadata with upsides scale to remove potential differences
+
+sala_megadata <- MegaData
+
+in_both <- sala_megadata$stockid %in% unique(upsides_megadata$stockid)
+
+MegaData <- MegaData[in_both,]
+
+KprotectedPerCell_Library <- KprotectedPerCell_Library[in_both,]
+
+if (nrow(MegaData) != nrow(KprotectedPerCell_Library)){
+  stop("error: megadata and k library aren't same size")
+}
+
+check <- MegaData$MSYfin / ((MegaData$r * MegaData$Kfin) / 4)
+
+a <- MegaData[check == FALSE,]
+
+# Adjust MSYs to match up by stock
+upsides_msy <- upsides_megadata %>% 
+  filter(Manage == 0) %>% 
+  group_by(SciName) %>% 
+  summarise(upsides_msy = sum(MSYfin))
+
+MegaData <- MegaData %>% 
+  left_join(upsides_msy, by = "SciName")
+
+MegaData$MSYfin[MegaData$Manage == 0] <- MegaData$upsides_msy[MegaData$Manage == 0]
+
+MegaData$Kfin[MegaData$Manage == 0] <- (MegaData$MSYfin[MegaData$Manage == 0] * 4) / MegaData$r[MegaData$Manage == 0]
+
+check <- MegaData$MSYfin / ((MegaData$r * MegaData$Kfin) / 4)
+
+if (!(sum(MegaData$MSYfin) == sum(upsides_megadata$MSYfin))){
+  stop("MSY totals do not match between upsides megadata and megadata")
+}
+
+###Compute spillover---PIXEL-LEVEL spillover 
+###
+if (lower_m == TRUE){
+  MegaData$m <-  MegaData$m  * .5
+}
+K<-MegaData$Kfin # K per species
+m<-MegaData$m # mobility per species
+r<-MegaData$r
+
+if (scenario=="all managed"){
+  E<-MegaData$Emsy
+}else if(scenario=="OAconstant"){
+  E<-MegaData$Efin
+}else if(scenario=="BAU1"){  
+  E<-MegaData$Efin_BAU1
+}else if(scenario=="Efin_msy"){ 
+  E<-MegaData$Efin_msy
+}else if(scenario=="EBvK01fin"){ 
+  E<-MegaData$EBvK01fin 
+}
+
+
+ER<-1-E
+ER<-1*(ER>1) + ER*(ER<=1)
+max(ER)
+min(ER)
+
+MPAselect<-MPAselect0
+R<-rowSums(KprotectedPerCell_Library[,which(MPAselect==1),drop=FALSE])
+ER_redistribute<-1-(1-ER)^(1/(1-R))
+
+
+b_outside_bau <-
+  ((m * K * (1 - R)) / (ER_redistribute * R + m)) * (1 - (ER_redistribute * (1 - R) * m) /
+                                                       ((ER_redistribute + m) * r)) 
+
+hbau<-na.omit(ER_redistribute*((m*K*(1-R))/((ER_redistribute*R)+m))*(1-((ER_redistribute*(1-R)*m)/(((ER_redistribute*R)+m)*r))))
+hbau<-hbau*(hbau>0)
+HBAU<-sum(hbau)
+HBAU
+
+# PICKSIZE<-100 #number of MPA sites selected
+
+nmax<-floor(length(celltoiterate)/PICKSIZE)
+nmax #this is the number of iterations needed for PICKSIZE at a time!
+
+Eevolve<-matrix(nrow=nmax,ncol=dim(MegaData)[1])
+
+p_protected <- matrix(nrow=nmax,ncol=dim(MegaData)[1])
+
+# k_per_cell <- t(as.datKprotectedPerCell_Library)
+dhmpa_stockish <- matrix(NA, nrow = nmax, ncol = nrow(KprotectedPerCell_Library))
+
+missing <- nrow(MegaData[MegaData$Manage == 1,]) / nrow(og_mega_data[og_mega_data$Manage == 1,])
+
+missing_stocks <- og_mega_data$stockid[!og_mega_data$stockid %in% MegaData$stockid]
+
+n_missing = nrow(og_mega_data) - nrow(MegaData)
+
+p_msy_missing = sum(MegaData$MSYfin) / sum(og_mega_data$MSYfin)
+
+msy_missing = sum(MegaData$MSYfin) - sum(og_mega_data$MSYfin)
+
+if (nrow(MegaData) != nrow(KprotectedPerCell_Library)){
+  stop("error: megadata and k library aren't same size")
+}
+
+if (run_global_sala_etal){
+  
+sirframe <- data.frame(cell = celltoiterate,
+                       weight = 0)
+
+registerDoParallel(parallel::detectCores()-4)
+
+  
+for (i in 1:nmax){ 
+  MPAselectPrev<-rowSums(KprotectedPerCell_Library[,which(MPAselect0==1),drop=FALSE])
+  a <- Sys.time()
+  result <- foreach(iter = 1:length(celltoiterate), .combine = rbind) %dopar% {
+    MPAselect<-MPAselect0
+    MPAselect[celltoiterate[iter]]<-1
+    R<-MPAselectPrev+KprotectedPerCell_Library[,celltoiterate[iter]]
+    ER_redistribute<-1-(1-ER)^(1/(1-R))
+    
+    
+    hmpa<-na.omit(ER_redistribute*((m*K*(1-R))/((ER_redistribute*R)+m))*(1-((ER_redistribute*(1-R)*m)/(((ER_redistribute*R)+m)*r))))
+    hmpa<-hmpa*(hmpa>0)
+    HMPA<-sum(hmpa)
+    HMPA-HBAU
+  }
+  Sys.time() - a
+  
+      if (length(result) != length(celltoiterate)){
+      stop("Ubuntu memory leak - try reducing cores and try again")
+    }
+  
+  #1. find the location of the top 1000 highest pixel-level
+  myorderHightoLow<-order(-result)#positions
+  cellselected<-myorderHightoLow[1:PICKSIZE] #but these are the position of the temporary pixels, not our reference pixels
+  #convert coord to scale comparable to priority areas
+  Prioritycellselected<-celltoiterate[cellselected]
+  
+  #3. block those additional 100 in MPAselect
+  MPAselect0[Prioritycellselected]<-1
+  
+  #4. save them for our priority areas
+  PriorityAreas<-append(PriorityAreas,Prioritycellselected)
+  
+  #5. Calculate food prov of the additional 100 cells
+  MPAselect<-MPAselect0
+  R<-rowSums(KprotectedPerCell_Library[,which(MPAselect==1),drop=FALSE])
+  ER_redistribute<-1-(1-ER)^(1/(1-R))
+
+  hmpa<-na.omit(ER_redistribute*((m*K*(1-R))/((ER_redistribute*R)+m))*(1-((ER_redistribute*(1-R)*m)/(((ER_redistribute*R)+m)*r))))
+  hmpa<-hmpa*(hmpa>0)
+  dhmpa_stockish[i,] <- hmpa - hbau
+  
+  HMPA<-sum(hmpa)
+  
+  #save result. Comment other parts not needed now.
+  NetworkResult[i]<-HMPA-HBAU
+  Eevolve[i,]<-ER_redistribute
+  
+  p_protected[i,] <- R
+ 
+  sirframe$weight[sirframe$cell == celltoiterate] <- as.numeric(result)
+  
+  candidates <- celltoiterateFULL[!celltoiterateFULL %in% PriorityAreas]
+
+  samps <- min(sir_samps, length(candidates))
+  
+  tmp_frame <- sirframe[sirframe$cell %in% candidates,]
+  
+  celltoiterate <- sample(tmp_frame$cell,size = samps, replace = FALSE, prob = tmp_frame$weight - min(tmp_frame$weight) + 1e-3)
+  
+  print(c(i,NetworkResult[i]))
+  rm(result,myorderHightoLow,cellselected,Prioritycellselected, MPAselect,R,hmpa,HMPA)
+}
+plot(NetworkResult)
+
+if(scenario=="BAU1"){
+  saveRDS(
+    NetworkResult,
+    file = file.path(
+      results_path,
+      "corrected_NetworkResult100_BAU1_mollweide.rds"
+    )
+  )
+  saveRDS(
+    PriorityAreas,
+    file = file.path(
+      results_path,
+      "corrected_PriorityAreas100_BAU1_mollweide.rds"
+    )
+    
+  )
+  
+  
+  saveRDS(Eevolve,
+          file = file.path(results_path,
+                           "global_exploitation_rate.rds"))
+  
+  saveRDS(p_protected,
+          file = file.path(results_path,
+                           "global_p_protected.rds"))
+  
+  
+  saveRDS(dhmpa_stockish,
+          file = file.path(results_path, "corrected_stockish_results_bau1.rds"))
+}else if(scenario=="all managed"){  
+  saveRDS(NetworkResult,file = "~/foodGCEfile/NetworkResult100_allmanaged_redistribute.rds")
+  saveRDS(PriorityAreas,file = "~/foodGCEfile/PriorityAreas100_allmanaged_redistribute.rds") 
+}else if(scenario=="OAconstant"){
+  saveRDS(NetworkResult,file = "~/foodGCEfile/NetworkResult100_OAconstant_mollweide_redistribute.rds")
+  saveRDS(PriorityAreas,file = "~/foodGCEfile/PriorityAreas100_OAconstant_mollweide_redistribute.rds")   
+}else if(scenario=="EBvK01fin"){
+  saveRDS(NetworkResult,file = "~/foodGCEfile/NetworkResult100_EBvK01fin_mollweide_redistribute.rds")
+  saveRDS(PriorityAreas,file = "~/foodGCEfile/PriorityAreas100_EBvK01fin_mollweide_redistribute.rds") 
+}
+
+  
+} else {
+  
+  NetworkResult <-readRDS(file = file.path(results_path,"corrected_NetworkResult100_BAU1_mollweide.rds"))
+  
+  PriorityAreas <- readRDS(file = file.path(results_path,"corrected_PriorityAreas100_BAU1_mollweide.rds") )
+  
+    
+ dhmpa_stockish <-  readRDS(
+          file = file.path(results_path, "corrected_stockish_results_bau1.rds"))
+  
+}
+
+# PICKSIZE<-100
+BenefitCurve<-as.data.frame(NetworkResult)/1000000
+MPAsize<-(length(MPAposition)+1)*100/dim(Cleanmegacell)[1]
+#(MPAinEEZ+1)*100/length(EEZposition)#there is +1 because the next pixel starts with +1
+BenefitCurve$MPA <- rescale(seq.int(nmax), to = c(MPAsize, 100))
+zerozero<-data.frame(0,0)
+names(zerozero)<-c("NetworkResult","MPA")
+zerozero[1,]<-c(-HBAU/(1000000),100)
+BenefitCurve<-rbind(BenefitCurve,zerozero)
+
+
+corrected_benefitplot<-ggplot(BenefitCurve, aes(MPA, NetworkResult)) +geom_line(col="blue")+# theme_classic()+
+  labs(x="% EEZ protected",y="Change in catch (MMT)",title=paste("Global (max =", round(max(BenefitCurve$NetworkResult),2),"MMT)"))#+geom_hline(yintercept = 0)
+corrected_benefitplot
+
+Priority<-as.data.frame(PriorityAreas)
+Priority$rank <- ((seq.int(nrow(Priority))/ncell))*100
+
+#add dh
+NetworkResult_prime<-as.data.frame(NetworkResult)
+dH_prime<-NetworkResult_prime %>% mutate(dH = NetworkResult - lag(NetworkResult, default = 0))
+plot(dH_prime$dH)
+Priority$NetworkResult<-rep(NetworkResult, each=PICKSIZE) ## this is adding delta H
+Priority$dH<-rep(dH_prime$dH/PICKSIZE, each=PICKSIZE) ## this is adding delta H
+head(Priority)
+dim(Priority)
+
+PriorityFrame <- as.data.frame(seq.int(nrow(CleanCoordmegacell)))
+names(PriorityFrame) <- "PriorityAreas"
+#add the priority
+PriorityFrame2<-left_join(PriorityFrame,Priority, by="PriorityAreas")
+PriorityFrame2[is.na(PriorityFrame2)] <- 0
+head(PriorityFrame2)
+dim(PriorityFrame2)
+
+ShortCoord<-CleanCoordmegacell
+ShortCoord$rank<-PriorityFrame2$rank
+ShortCoord$NetworkResult<- PriorityFrame2$NetworkResult#this is for deriving dh
+ShortCoord$dH<- PriorityFrame2$dH#this is for deriving dh
+ShortCoord$ID<-row.names(ShortCoord)
+
+dim(ShortCoord)
+head(ShortCoord)
+
+ShortCoord_Sort <- ShortCoord[order(-ShortCoord$rank),] %>% filter(rank!=-1000)
+
+ShortCoord_Sort$sign<-ShortCoord_Sort$dH>0
+
+k_protected <- matrix(rep(MegaData$Kfin,ncol(KprotectedPerCell_Library)), ncol = ncol(KprotectedPerCell_Library), nrow = nrow(MegaData))
+
+k_per_cell <- colSums(k_protected * KprotectedPerCell_Library)
+
+k_per_critter <-  KprotectedPerCell_Library[,as.numeric(ShortCoord_Sort$ID)]
+
+k_per_critter <- k_per_critter[,as.numeric(ShortCoord_Sort$ID)]
+
+write_rds(k_per_critter, file = file.path(results_path,"k_per_critter.rds"))
+
+ShortCoord_Sort$k <- as.numeric(k_per_cell[as.numeric(ShortCoord_Sort$ID)])
+
+sala_megadata <- MegaData
+
+sala_cell_priorities <- ShortCoord_Sort
+
+InflectPoint<-min(which(ShortCoord_Sort$sign == TRUE))
+InflectMPA<-ShortCoord_Sort$rank[InflectPoint]
+
+# this is broken becuase of the ranking plot error
+MPAcoverage<-ShortCoord_Sort %>% ggplot(aes(x=lon,y=lat,fill=dH)) + #scale_fill_gradient2(low="darkred", mid="white",high="#00539CFF",midpoint = 0, space = "Lab",na.value = "grey50", guide = "colourbar", aesthetics = "fill",name=expression(paste(Delta, "H (MT)")))+
+  scale_fill_gradientn(colours = c("forestgreen", "white", "orange"), limits=c(0,100), values = scales::rescale(c(min(ShortCoord_Sort$rank), InflectMPA, max(ShortCoord_Sort$rank))),name="Protection sequence")+
+  theme(axis.title.x = element_blank(),axis.title.y = element_blank(), panel.background = element_blank(),legend.position=c(0.63, 0.05), legend.direction = "horizontal")+ #"bottom
+  geom_raster()+
+  geom_raster(data=MPA_coord, aes(x=lon, y=lat),fill="cyan")+  #"#EEA47FFF"
+  geom_sf(data = land_shp_moll, fill="black", lwd = 0, inherit.aes = F)+ theme(panel.grid.major = element_line(colour = 'transparent'))
+MPAcoverage
+
+clean_MPAcoverage<-ShortCoord_Sort %>% ggplot(aes(x=lon,y=lat,fill=dH)) + #scale_fill_gradient2(low="darkred", mid="white",high="#00539CFF",midpoint = 0, space = "Lab",na.value = "grey50", guide = "colourbar", aesthetics = "fill",name=expression(paste(Delta, "H (MT)")))+
+  # scale_fill_gradientn(colours = c("forestgreen", "white", "orange"), limits=c(0,100), values = scales::rescale(c(min(ShortCoord_Sort$rank), InflectMPA, max(ShortCoord_Sort$rank))),name="Protection sequence")+
+  theme(axis.title.x = element_blank(),axis.title.y = element_blank(), panel.background = element_blank(),legend.position=c(0.63, 0.05), legend.direction = "horizontal")+ #"bottom
+  geom_raster()+
+  geom_raster(data=MPA_coord, aes(x=lon, y=lat),fill="cyan")+  #"#EEA47FFF"
+  geom_sf(data = land_shp_moll, fill="black", lwd = 0, inherit.aes = F)+ theme(panel.grid.major = element_line(colour = 'transparent')) + 
+  scale_fill_gradient2(low = "tomato", mid = "white", high = "forestgreen", 
+                       midpoint = 0)
+clean_MPAcoverage
+
+
+```
+
+```{r compare-maps}
+
+
+
+existing_mpas <- MPA_coord %>%
+  sf::st_as_sf(coords = c("lon", "lat"),
+               crs = sf::st_crs(land_shp_moll))
+
+top_sala_res <- sala_cell_priorities %>%
+  filter(rank <= 30) %>%
+  mutate(resolution = "Global",
+         coord = paste(lon, lat, sep = '-')) %>%
+  sf::st_as_sf(coords = c("lon", "lat"),
+               crs = sf::st_crs(land_shp_moll)) %>%
+  sf::st_join(existing_mpas) %>% 
+  filter(is.na(MPA))
+
+
+
+top_upsides_res <- local_cell_priorities %>% 
+  filter(rank <= 30) %>% 
+  mutate(resolution = "Regional",
+           coord = paste(lon,lat, sep = '-')) %>% 
+   sf::st_as_sf(coords = c("lon", "lat"),
+               crs = sf::st_crs(land_shp_moll)) %>% 
+    sf::st_join(existing_mpas) %>% 
+  filter(is.na(MPA))
+
+
+overlap <- sf::st_intersection(top_sala_res, top_upsides_res) %>% 
+  mutate(resolution = "Overlap") %>% 
+  select(names(top_upsides_res))
+
+percent_overlap <- nrow(overlap) / nrow(top_upsides_res)
+
+
+top_upsides_res <- top_upsides_res %>% 
+  filter(!coord %in% overlap$coord)
+
+top_sala_res <- top_sala_res %>% 
+filter(!coord %in% overlap$coord)
+
+
+compare_res <- top_sala_res %>% 
+  bind_rows(top_upsides_res) %>% 
+  bind_rows(overlap) 
+
+
+  ll <- sf::st_coordinates(compare_res)
+  
+  compare_res <- compare_res %>% 
+    bind_cols(as.data.frame(ll)) %>% 
+    mutate(resolution = factor(resolution),
+           resolution = fct_relevel(resolution,c("Global","Regional","Overlap")))
+
+overlap_plot <- compare_res %>%
+  ggplot() +
+  geom_tile(aes(X,Y,fill = resolution), alpha = 1) +
+  geom_sf(
+    data = land_shp_moll,
+    fill = "black",
+    inherit.aes = F,
+    lwd = 0.1
+  ) +
+  scale_fill_viridis_d(name = "", direction = -1) + 
+  scale_x_continuous(name = "") + 
+  scale_y_continuous(name = "") + 
+  theme(legend.position= "top",
+        legend.direction = "horizontal",
+        plot.margin = margin(0,0,0,0)) + 
+  labs(subtitle = "(a)")
+
+overlap_plot
+
+short_eezs <- eezs %>% 
+  select(iso3_code,iso3c_name,ISO_TER1)
+
+
+top_countries <- fao_capture %>% 
+  filter(capture_units == "t",
+         year > 2010) %>% 
+  group_by(fao_country_name, iso3_code) %>% 
+  summarise(tc = sum(capture, na.rm = TRUE)) %>% 
+  ungroup() %>% 
+  arrange(desc(tc)) %>% 
+  slice(1:10)
+
+sala_p_eez <- sala_cell_priorities %>%
+  sf::st_as_sf(coords = c("lon", "lat"),
+               crs = sf::st_crs(land_shp_moll)) %>%
+  sf::st_join(short_eezs) %>% 
+  filter(!is.na(iso3_code)) %>% 
+  mutate(top_30 = rank <= 30) %>% 
+  group_by(ISO_TER1, iso3c_name) %>% 
+  summarise(p_cells_top_30 = mean(top_30),
+            p_k_top_30 = sum(k[top_30]) / sum(k),
+            p_benefit = mean(dH > 0),
+            total_k = sum(k)) %>% 
+  ungroup() %>% 
+  arrange(desc(total_k)) %>% 
+  mutate(resolution = "Global")
+  
+
+local_cell_priorities %>%
+  sf::st_as_sf(coords = c("lon", "lat"),
+               crs = sf::st_crs(land_shp_moll)) %>%
+  sf::st_join(short_eezs) %>% 
+  filter(!is.na(iso3_code)) %>% 
+  mutate(top_30 = rank <= 30) %>% 
+  filter(ISO_TER1 == "CHN") %>%
+  ggplot() +
+  geom_sf(aes(color = top_30))
+
+
+upsides_p_eez <- local_cell_priorities %>%
+  sf::st_as_sf(coords = c("lon", "lat"),
+               crs = sf::st_crs(land_shp_moll)) %>%
+  sf::st_join(short_eezs) %>% 
+  filter(!is.na(iso3_code)) %>% 
+  mutate(top_30 = rank <= 30) %>% 
+  group_by(ISO_TER1, iso3c_name) %>% 
+  summarise(p_cells_top_30 = mean(top_30),
+            p_k_top_30 = sum(k[top_30]) / sum(k),
+            p_benefit = mean(dH > 0),
+            total_k = sum(k)) %>% 
+  ungroup() %>% 
+  arrange(desc(total_k)) %>% 
+  mutate(resolution = "Regional")
+  
+p_protected_data <- sala_p_eez %>% 
+  bind_rows(upsides_p_eez) %>% 
+  filter(ISO_TER1 %in% unique(top_countries$iso3_code)) %>% 
+    mutate(resolution = factor(resolution),
+           resolution = fct_relevel(resolution,c("Regional","Global")))
+
+
+p_protected_plot <- p_protected_data %>% 
+  ggplot(aes(reorder(iso3c_name,p_benefit), p_benefit * 100, fill = resolution)) + 
+  geom_col(position = "dodge", show.legend = FALSE) + 
+  scale_y_continuous(
+                     name = "% EEZ in Food Increasing MPA",
+                     expand = c(0,NA)) + 
+  scale_x_discrete(name = '') + 
+  scale_fill_manual(values = rev(rev(viridis_pal()(3))[1:2])) +
+  theme(axis.text.y = element_text(size = 8),
+        axis.text.x = element_text(size = 8),
+        axis.title.x = element_text(size = 8),
+        plot.margin = margin(-10,5,0,0)) +
+  coord_flip() + 
+    labs(subtitle = "(b)")
+
+
+p_protected_plot 
+
+fig_2 <- overlap_plot +
+  p_protected_plot + 
+  patchwork::plot_layout(widths = c(2.5,.75))
+
+ggsave(filename = file.path(results_path,"overlap_p_plot.pdf"),fig_2, height = 6, width = 8)
+fig_2
+```
+
+```{r compare-yield-curves}
+# make plot comparing the yield curves
+
+k_series <- sala_cell_priorities %>% 
+  mutate(resolution = "Global") %>% 
+  bind_rows(local_cell_priorities %>% 
+              mutate(resolution = "Regional")) %>% 
+  group_by(resolution) %>% 
+  arrange(rank) %>% 
+  mutate(percent_k = cumsum(k) / sum(k),
+         yield_effect =  cumsum(dH) / 1e6) 
+
+k_peak <- k_series %>% 
+  group_by(resolution) %>% 
+  filter(yield_effect == max(yield_effect))
+
+k_plot <- k_series %>% 
+  ggplot(aes(percent_k, yield_effect, color = resolution)) + 
+  geom_vline(aes(xintercept = 0.3), linetype = 2)+
+  geom_hline(aes(yintercept = 0), linetype = 1)+
+  geom_line(size = 1) + 
+  scale_x_continuous(labels = percent, name = "% of K in MPA") + 
+  scale_y_continuous(name = "Change in Global Yield (MMT)") + 
+  geom_label_repel(data = k_peak, aes(percent_k, yield_effect, label = round(yield_effect,2)),size = 3,box.padding = 4, show.legend = FALSE, fill = "black") + labs(title = "(a)") + 
+  scale_color_manual(name = "Unassessed Stock Structure",values = rev(viridis_pal()(3))[1:2]) + 
+  theme(legend.position = "top", 
+        legend.title = element_text(size = 8),
+        legend.text = element_text(size = 6),
+        axis.text.x = element_text(size = 10),
+        axis.text.y= element_text(size = 8),
+        axis.title.y = element_text(size = 10),
+         axis.title.x = element_text(size = 10))
+
+space_plot <- k_series %>% 
+  ggplot(aes(rank / 100, yield_effect, color = resolution)) + 
+  geom_vline(aes(xintercept = 0.3), linetype = 2)+
+  geom_hline(aes(yintercept = 0), linetype = 1)+
+  geom_line(size = 1) + 
+  scale_x_continuous(labels = percent, name = "% of Cells in MPA") + 
+  scale_y_continuous(name = "") + 
+  geom_label_repel(data = k_peak, aes(rank / 100, yield_effect, label = round(yield_effect,2)),size = 3, show.legend = FALSE, fill = "black", box.padding = 4) + labs(title = "(b)") + 
+  scale_color_manual(name = "",values = rev(viridis_pal()(3))[1:2],
+                     guide = "none") + 
+  theme(legend.position = "top", 
+        axis.text.x = element_text(size = 10),
+        axis.text.y= element_text(size = 8),
+        axis.title.x = element_text(size = 10))
+
+yield_curve_plot <- k_plot / space_plot
+
+yield_curve_plot
+
+ggsave(filename = file.path(results_path,"yield_curve_plot.pdf"),yield_curve_plot, height = 6, width = 4)
+```
+
+
+Daniel Ovando*
+School of Aquatic and Fishery Sciences, University of Washington, Seattle, WA 98195
+* Corresponding author: danovan@uw.edu
+
+
+Owen Liu
+Northwest Fisheries Science Center, National Oceanic and Atmospheric Administration, Seattle WA  98112
+
+Renato Molina
+Rosenstiel School of Marine and Atmospheric Science and Miami Herbert Business School, University of Miami, Miami, FL 33149
+
+Ana Parma
+Centro para el Estudio de Sistemas Marinos
+Centro Nacional Patagónico-CONICET
+Blvd. Brown 2915
+U 9120 ACF Puerto Madryn, Chubut
+Argentina
+
+Cody Szuwalski
+Alaska Fishery Science Center, National Oceanic and Atmospheric Administration, Seattle WA 98115
+
+\newpage
+# Main text {.unnumbered}
+
+Sala *et al.* [@sala2021] present a framework for designing and assessing the benefits of a global network of marine protected areas (MPAs) for biodiversity, carbon sequestration, and food security. However, the model used to project these benefits makes a series of insufficiently tested or justified assumptions. We show that a more defensible model greatly alters the map of priority MPA areas and reduces food benefits by  `r percent(-(k_peak$NetworkResult[k_peak$resolution == "Regional"] - k_peak$NetworkResult[k_peak$resolution == "Global"]) / k_peak$NetworkResult[k_peak$resolution == "Global"])`. 
+
+We agree with Sala *et al.* that MPAs can have an important role to play in managing and conserving marine ecosystems. We also recognize the value of global policy assessments that must often sacrifice precision for scope. But, we are concerned that the model used in Sala *et al.* does not present a reliable assessment of the potential role or design of MPAs for benefiting fisheries yields, and by extension it is not a reliable foundation for the broader assessment of the role of MPAs in achieving multiple objectives of "marine conservation, food security and climate action" [@sala2021].
+
+Sala *et al.*’s results depend on the same model as Cabral *et al.* [@cabral2020] (see Ovando *et al.* [@ovando2021] for a critique of this model), which assumes that density dependence is a function of total pooled population size, independent of how fish are distributed in space, and that “unassessed” fish stocks (stocks not represented in the RAM Legacy Stock Assessment Database) of a given species are a single interconnected population. These two assumptions generate results that are neither consistent with their source material [@costello2016] nor ecologically reasonable. The global distribution assumed for unassessed stocks implies that MPAs around Australia can increase catches along the shores of North America [@ovando2021], or that  a single population an be affected both by MPAs in the Caribbean and in the waters off of China (Fig.S2). When movement rates are low under the assumption of pooled density dependence, fishing *harder* outside an MPA can produce *higher biomass* inside the MPA than there would have been in the absence of any fishing at all (Fig.S5). 
+
+To assess the impact of these strong assumptions, we ran a version of Sala *et al.*'s analysis changing three key assumptions: the spatial resolution of the simulated populations, the population dynamics model used, and the nature of density dependence. The food projections made by Sala *et al.* are based on estimates of fishing mortality rates and life history values provided by Costello *et al.* [@costello2016] . Costello *et al.* assume that for each unassessed taxonomic group, separate stock units exist within a specific country's waters within an FAO major statistical area, except for highly migratory unassessed stocks, which are assumed to be well-mixed within FAO major statistical areas. Costello *et al.* based their results on a Pella-Tomlinson [@pella1969] population model. Sala *et al.* aggregated all the individual unassessed stocks assumed by Costello *et al.* into one global stock per species, and converted the population dynamics model to a logistic growth equation. We call these assumptions made by Sala *et al.* the *Global* scenario. 
+
+We created an alternative set of results based on the same stock resolution and with the same population dynamics as Costello *et al.* [@costello2016]. We assume that density dependence (e.g., competition for food or habitat) occurs at a local scale, and then the resulting production is distributed in space through the model's movement dynamics. We call this alternative group of assumptions the *Regional* scenario. Due to discrepancies in values reported in Sala *et al.* [@sala2021] and Costello *et al.* [@costello2016], we restricted our analysis to stocks shared between the two analyses (`r nrow(MegaData)` stocks out of `r nrow(og_mega_data)`), and then adjusted the maximum sustainable yield for each stock in both analyses to match the generally lower values reported in Costello *et al.* [@costello2016], leaving a comparable set of stocks with the same total maximum sustainable yield (see Supplementary Information, SI). As a consequence, the results of the *Global* assumptions do not perfectly match those reported in @sala2021, although the overall patterns are highly similar. 
+
+<!-- We emphasize that the point of this exercise is to demonstrate the difference between the two assumptions, not the absolute values.  -->
+
+<!-- Due to discrepancies in values reported in Sala *et al.* [@sala2021] and Costello *et al.* [@costello2016] (see SI), the potential yields and included fisheries differ between Sala *et al.* [@sala2021] and Costello *et al.* [@costello2016].  -->
+
+
+```{r yield-summar}
+
+global_k_dist <- ShortCoord_Sort %>% 
+  arrange(desc(k)) %>% 
+  mutate(cumuk = cumsum(k)) %>% 
+  mutate(p_cumuk = cumuk / max(cumuk))
+
+k_loc <- percent((which(global_k_dist$p_cumuk >= 0.9)[1]) / nrow(global_k_dist))
+
+global_k_dist %>% 
+  ggplot(aes(1:length(cumuk), cumuk)) + 
+  geom_point()
+
+global_peak <- percent(k_peak$percent_k[k_peak$resolution =="Global"])
+
+global_space_peak <- percent(k_peak$rank[k_peak$resolution =="Global"] / 100)
+
+local_peak <- percent(k_peak$percent_k[k_peak$resolution =="Regional"])
+
+
+local_space_peak <- percent(k_peak$rank[k_peak$resolution =="Regional"] / 100)
+
+global_peak_val <- round((k_peak$yield_effect[k_peak$resolution =="Global"]),2)
+
+local_peak_val <- round(k_peak$yield_effect[k_peak$resolution =="Regional"],2)
+
+yield_diff <- percent(local_peak_val /global_peak_val)
+
+
+p_usa_global <- percent(p_protected_data$p_cells_top_30[p_protected_data$iso3c_name == "United States" & p_protected_data$resolution == "Global"])
+
+p_usa_local <- percent(p_protected_data$p_cells_top_30[p_protected_data$iso3c_name == "United States" & p_protected_data$resolution == "Regional"])
+
+```
+
+
+<!-- Sala *et al.* presented their results as function of the fraction of ocean surface protected. However, under the assumptions of their model, for the subset of stocks considered here 90% of the ocean's carrying capacity exists in `r k_loc` of the cells. While the exact numbers will vary depending on stocks included, this exercise demonstrates the sensitivity of the food provision potential of MPAs to the key assumptions explored here. -->
+
+Under the *Global* assumptions, global food production is maximized with an MPA network covering `r global_peak` of carrying capacity, which can be achieved by protecting `r global_space_peak` of the ocean surface. Under the *Regional* assumptions, the maximum yield benefits were much lower; `r yield_diff` of the maximum benefits of the *Global* assumptions achieved by protecting  `r local_peak` of carrying capacity (`r local_space_peak` of ocean surface) (Fig.\@ref(fig:fig-1)). The *Local* results imply that a greater portion of carrying capacity could be protected without substantially reducing global fishery catches. The *Global* results place much of the West Coast of North America in the top 30% of areas for protection, but omit much of the coastal Indian Ocean and the Coral Triangle. These results are flipped under our *Regional* assumptions. Sala *et al.*'s *Global* assumptions suggest that `r p_usa_global` of the USA's EEZ could be placed in MPAs while increasing food production, while under our *Regional* assumptions that number drops to `r p_usa_local` (Fig.\@ref(fig:fig-2)). 
+
+
+
+
+<!-- Additional testing of key assumptions, such as accounting for uncertainties in underlying fishing mortality rates and movement dynamics would doubtless reveal further substantial sensitivities -->
+
+<!-- While the top 30% priority areas for protection under the two assumptions overlap in some areas, there are stark differences from the perspective of a global food-provision prioritization map. -->
+
+The assumption that density dependence occurs at local scales used in our *Regional* results is common in the MPA modeling literature, including in studies authored by members of Sala *et al.* [@hastings1999;@cabral2019;@sala2013;@sala2016;@rassweiler2012;@rassweiler2014]. We tested the sensitivity of our *Regional* results to using the "pooled" density dependence assumption used in Sala *et al.* rather than "local" density dependence; the stark contrast in both the magnitude and design of a global MPA network for food provision remains (Fig.S3-S4). 
+
+<!-- With regards to the assumed single global population of individual unassessed species.  -->
+
+Fish often disperse over vast distances at one or more phases of their life cycle. However, the spatial extent implied by the *Global* assumption is massive for many species (Fig.S6); even for the most mobile of species, dispersal and complete mixing across entire ocean or planetary scales is rare e.g. @moore2020b. Sala *et al.*  used the the spatial stock structure provided by Free *et al.* [@free2019] for "assessed" fisheries; the footprints of these stocks are generally much smaller than the entire EEZ of a country, and of the "unassessed" fisheries (Fig.S6). It is inconsistent to use the smaller footprints from Free *et al.* [@free2019] for the assessed stocks, as Sala *et al.* have done, but then skip past the *Regional* stock structure to a much larger single global stock distribution for unassessed species. The alternative assumption made by Costello *et al.* [@costello2016] that stocks of non-migratory species are contained within country borders is not perfect, but it is more in line with best available evidence of stock sizes from Free *et al.* [@free2019].
+
+<!-- By refining only three assumptions, we have produced a significantly different picture of the magnitude of potential food benefits from MPAs, and the location of priority areas for MPAs designed around global food provision than those presented in Sala *et al.*.  -->
+
+We are not suggesting that the *Regional* results are the “right” findings. Instead, we are demonstrating that the central results of Sala *et al* are not robust to changes to their core assumptions. Other shortcomings remain in both the *Global* and *Regional* scenarios. The spatial complexity of MPAs are simplified to a two-patch surplus production model. The effort displacement model used implies that displacing fishing effort for one species outside of an MPA has no impact on other species or habitats in the remaining fished area; these dynamics must be taken into consideration when assessing not just yield but also the biodiversity and carbon impacts of MPAs. 
+
+There clearly are places on earth where MPAs may benefit food production, particularly in areas where overfishing is prevalent. However, these locations cannot be reliably identified using the kind of global-scale model and data employed by Sala *et al.*. Refinements to their assumptions, in accordance with their own references, do not just alter results at the margin, but fundamentally change their conclusions at multiple scales. Assessments of the role of MPAs in food provision should evaluate and communicate key sensitivities and potential tradeoffs between conservation and food provision arising from alternative sets of plausible assumptions, so that communities are empowered to make decisions around MPAs with full knowledge of both the potential and uncertainty of the effects of protected areas on food security. 
+
+```{r fig-1, fig.cap="Change in global yield as a function of percent of global carrying capacity (K) in MPAs (a) and percent of global ocean surface in MPAs (b). Numbers and lines point to values at the peak of each curve. *Global* assumes one global stock per unassessed species and pooled density dependence, following Sala *et al.* [@sala2021] . *Regional* indicates that stocks are modeled in the same manner as Costello *et al.* [@costello2016] with local density dependence.", include=TRUE,fig.width=3.5, fig.height=5.25}
+
+ggsave(
+  yield_curve_plot,
+  filename =  here(results_path, "fig_1.JPG"),
+  width = unit(89, "mm"),
+  height = unit(round(89 * 1.5), "mm"),
+  units = "mm"
+)
+
+yield_curve_plot
+
+
+```
+
+
+
+```{r fig-2, fig.cap="Spatial differences in MPA outcomes between alternative assumptions. Map (a) shows cells identified in the top 30% of MPAs, where color indicates which set of assumptions produced which cells, with overlapping cells indicated by the ‘Overlap’ color. Bars (b) indicate the percent of the top-ten countries' by recent FAO reported catches EEZs each assumption set projects could be placed inside food increasing MPAs. Existing MPAs omitted as these are automatically included by the model. *Global* assumes one global stock per unassessed species and pooled density dependence, following Sala *et al.* [@sala2021] . *Regional* indicates that stocks are modeled in the same manner as Costello *et al.* [@costello2016] with local density dependence.", include=TRUE, fig.width=7.2, fig.height=5}
+fig_2
+
+
+ggsave(
+  fig_2,
+  filename =  here(results_path, "fig_2.png"),
+  width = unit(183, "mm"),
+  height = unit(183 * 0.7, "mm"),
+  units = "mm"
+)
+```
+
+
+
+\newpage
+# Acknowledgments {.unnumbered}
+
+We thank the authors of Sala *et al.* [@sala2021] for constructive discussions in the development of this manuscript,  as well as  A. MacNeil and one anonymous reviewer for their helpful comments. 
+
+# Data Availability {.unnumbered}
+
+All materials needed to fully reproduce the results in this manuscript are publicly available at https://github.com/DanOvando/mpas-and-food-unknown. 
+
+# Author Contributions {.unnumbered}
+
+Analyses were performed by D.O. and A.P. All authors contributed to the conceptualization and writing of the manuscript. 
+
+# Competing Interests {.unnumbered}
+
+The authors declare no competing interests. 
+
+# References {.unnumbered}
+
+

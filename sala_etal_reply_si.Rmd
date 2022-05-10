@@ -1,0 +1,1059 @@
+---
+subtitle: "Supplementary Information"
+title: |
+  | Global Effects of Marine Protected Areas 
+  | on Food Security Are Unknown
+author: 
+  - Daniel Ovando
+  - Owen Liu
+  - Renato Molina
+  - Ana Parma
+  - Cody Szuwalski
+output: 
+  bookdown::pdf_document2:
+    latex_engine: xelatex
+  bookdown::word_document2:
+    reference_docx: template.docx
+bibliography: references.bib
+linkcolor: blue
+biblio-style: "apalike"
+toc: FALSE
+header-includes:
+  - \usepackage{setspace}\doublespacing
+  - \usepackage{lineno}\linenumbers
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE)
+library(tidyverse)
+library(here)
+library(readr)
+library(sf)
+library(rnaturalearth)
+library(countrycode)
+library(patchwork)
+library(data.table)
+theme_set(theme_minimal(base_size = 14))
+Rcpp::sourceCpp(here('src', "sim_mpa.cpp"))
+use_ray <- TRUE
+
+cabral_MegaData <- readRDS(file = here("data", "MegaData.rds"))
+
+cell_coords <-
+  readRDS(file = here("data", "CleanCoordmegacell_mollweide.rds"))
+
+k_per_cell <-
+  readRDS(file = here("data", "KprotectedPerCell_Library_mollweide.rds"))
+
+dimnames(k_per_cell) <- list(cabral_MegaData$stockid, 1:ncol(k_per_cell))
+
+  MegaData <- readRDS(file = here("data", "MegaData_ray.rds")) %>%
+    filter(INCLUDE == 1)
+  
+  og_mega_data <- MegaData
+  
+  MegaData <- MegaData %>% 
+    filter(stockid %in% unique(cabral_MegaData$stockid)) # because access is not provided for the underlying habitat layers, have to match it down to stocks with match in original MegaData, for which the habitat layers are provided
+
+  k_per_cell <- k_per_cell[MegaData$stockid,]
+  
+
+
+upsides <-
+  read_csv(here("data", "upsides", "ProjectionData.csv")) %>%
+  janitor::clean_names()
+
+upsides_bau <- upsides %>%
+  filter(policy == "BAU",
+         scenario == "Con. Concern") %>%
+  filter(year == max(year)) %>%
+  dplyr::rename(bvbmsy_upsides = bv_bmsy,
+                fvfmsy_upsides = fv_fmsy) %>%
+  mutate(manage = ifelse(dbase == "FAO", 0, 1))
+
+upsides_bau$iso3_country_code <-
+  countrycode::countrycode(upsides_bau$country, "country.name", "iso3c")
+
+upsides_bau$iso3_country_name <-
+  countrycode::countrycode(upsides_bau$iso3_country_code, "iso3c", "country.name")
+
+
+upsides_historic <- upsides %>%
+  filter(policy == "Historic",
+         scenario == "Historic") %>%
+  group_by(id_orig) %>% 
+  filter(year == max(year)) %>%
+  ungroup() %>% 
+  dplyr::rename(bvbmsy_upsides = bv_bmsy,
+                fvfmsy_upsides = fv_fmsy) %>%
+  mutate(manage = ifelse(dbase == "FAO", 0, 1))
+
+upsides_historic$iso3_country_code <-
+  countrycode::countrycode(upsides_historic$country, "country.name", "iso3c")
+
+upsides_historic$iso3_country_name <-
+  countrycode::countrycode(upsides_historic$iso3_country_code, "iso3c", "country.name")
+
+
+
+land_shp_moll = rnaturalearth::ne_download(category = "physical", type = "land",scale = 110, returnclass = "sf") %>% 
+st_transform(crs = "+proj=moll")
+  
+
+eezs <-
+  sf::read_sf(here("data", "World_EEZ_v11_20191118_LR", "eez_v11_lowres.shp")) %>%
+  mutate(iso3_code = countrycode(SOVEREIGN1, "country.name",  "iso3c")) %>%
+  mutate(iso3c_name = countrycode(iso3_code, "iso3c",  "country.name")) %>%
+  filter(!is.na(iso3_code)) %>%
+  sf::st_transform(sf::st_crs(land_shp_moll))
+
+
+fao_areas <- sf::st_read(here('data', "FAO_AREAS_NOCOASTLINE")) %>%
+  janitor::clean_names()
+
+fao_areas <- sf::st_read(here('data', "FAO_AREAS_NOCOASTLINE"), promote_to_multi = FALSE) %>%
+  janitor::clean_names() %>% 
+  filter(f_level == "MAJOR") %>% 
+  mutate(fao_area_code = as.numeric(f_area)) %>% 
+  sf::st_transform(sf::st_crs(land_shp_moll))
+    
+    
+  eez_fao_layer <- st_join(eezs, fao_areas)
+    
+
+```
+
+\renewcommand{\thefigure}{S\arabic{figure}}
+
+\setcounter{figure}{0}
+
+\renewcommand{\thetable}{S\arabic{table}}
+
+\setcounter{table}{0}
+
+
+This document presents methods and sensitivity analyses for "Global
+Effects of Marine Protected Areas on Food Security Are Unknown".
+
+# Methods
+
+## Summary
+
+The food-provision results of @sala2021 are based on the methods
+described in @cabral2020 (see @ovando2021 for a summary of issues with
+this model), which are in turn based on estimates of stock status and
+life history from @costello2016.
+
+In the steps between @costello2016 and @sala2021, Sala *et al.* made a
+number of changes to the model and new assumptions. This analysis tests
+the effects of these changes and assumptions on projections of the
+impacts and design of a global network of marine protected areas for
+food security.
+
+Projections of the impacts of fisheries reform (in this case,
+implementation of no-take MPAs) require some estimate of fishing
+mortality rates and expected stock status in the absence of the policy (in this case Marine Protected Areas, MPAs). The
+challenge here is the vast majority of the world's fisheries, and
+roughly 50% of global catch [@hilborn2020], come from "unassessed"
+fisheries that lack formal estimates of stock status.
+
+To fill this gap, @costello2016, based on @costello2012, utilized a
+catch-based data-limited assessment method to provide estimates of stock
+status, as measured by biomass relative to biomass at maximum
+sustainable yield (MSY), B/B~MSY~, and the fishing mortality rate
+relative to the fishing mortality rate that would produce MSY at
+equilibrium (F/F~MSY~).
+
+The core methods of @costello2016 are:
+
+-   Assume that for each unassessed taxonomic group, separate stock
+    units exist within a specific country's waters within an FAO major
+    statistical area, except for highly migratory unassessed stocks,
+    which are assumed to be well-mixed within FAO major statistical
+    areas.
+
+-   Given the catch history for that "stock" (generally defined by the
+    intersection of taxa, country, and FAO statistical area), generate
+    informative priors on B/B~MSY~ using an updated version of the panel
+    regression model described in @costello2012. Critically,
+    @costello2012 estimates B/B~MSY~ as a function of traits of the
+    catch history including maximum catch volume, the number of years to
+    peak catch, the ratio of catch in a given year to max catch, and
+    others (See Table S1 of the supplementary materials for
+    @costello2012).
+
+-   Use these priors on B/B~MSY~ in a modified version of Catch-MSY
+    [@martell2013], in the manner of @anderson2017a. The modified
+    version of Catch-MSY utilizes a Pella-Tomlinson [@pella1969]
+    population model to estimate B/B~MSY~, F/F~MSY~, and parameters such
+    as MSY, carrying capacity *K*, and the Pella-Tomlinson growth
+    parameter *g*, conditional on the shape of the catch history and the
+    priors derived from the panel regression from @costello2012.
+
+-   Based on these estimates of current stock status and life history,
+    @costello2016 then applied a "business as usual" fishing mortality
+    policy, based in F/F~MSY~ for each stock (generally, bionomic
+    equilibrium for unassessed stocks). This provides estimates of stock
+    status and fishery catches over time around the globe.
+
+@sala2021 utilize some of the life history parameters and the "business
+as usual" stock status from @costello2016 to make their projections.
+However, they make two key modifications:
+
+1.  They aggregate **all** of the individual unassessed stocks assumed
+    by @costello2016 into one global stock per species.
+
+2.  They use a Schaefer (logistic) population model rather than a
+    Pella-Tomlinson model, borrowing some parameters estimated under the
+    Pella-Tomlinson for their Schaefer model.
+
+These choices introduce two related statistical problems, as well as two
+strong and unrealistic assumptions. As noted, @costello2016 based their
+estimates of stock status on the attributes of individual stocks' catch
+histories. @sala2021 assume instead that each unassessed stock is one
+global population, with stock status a function of the MSY weighted mean
+stock status of individual stocks from @costello2016. However, to the
+extent that the trends and magnitude of the sum of the catch histories
+differ from the individual catch histories, the stock status estimated
+for the "global" stock by the methods of @costello2016 will not be the
+same as the MSY weighted average of the individual stocks; i.e.,
+changing the assumed trajectory and volume of catches by aggregating
+from individual stocks to a global stock would change the estimate of
+stock status used for projections. It is not clear how different the
+results will be, but they will be different.
+
+The second is the conversion to a Schaefer model. Estimated life history
+traits such as *MSY* are not intrinsic attributes of a population, but
+rather are a function of data and assumed model structure and resulting
+covariances across parameters. So, the MSY estimates produced by
+@costello2016 would have been different had those estimates been
+produced by a Schaefer model rather than a Pella-Tomlinson model, and as
+such, Pella-Tomlinson derived MSY values cannot simply be plugged into a
+Schaefer model framework as done by @sala2021.
+
+Beyond these methodological issues, we also felt it was important to
+test the implications of two assumptions of @sala2021: that unassessed
+stocks are comprised of one global population, and the spatial scale of
+density dependence. To examine the effect of these issues, we developed
+a parallel version of the @sala2021's methods, allowing us to compare
+the estimates of the impacts and design of a global network of marine
+protected areas for food security under i) variations of the population
+dynamic model used, ii) the assumed stock structure, and iii) the nature
+of density dependence. Below, we detail the methods used to make these
+comparisons.
+
+## Creating Comparable Stocks
+
+```{r stocks}
+
+new_stocks <- og_mega_data$stockid[!(og_mega_data$stockid %in% unique(cabral_MegaData$stockid))]
+
+upsides_bau_unassessed <- upsides_bau %>% 
+  filter(manage == 0)
+
+
+upsides_bau_assessed <- upsides_bau %>% 
+  filter(manage == 1, dbase == "RAM")
+
+og_mega_data_unassessed <- og_mega_data %>% 
+  filter(Manage == 0)
+
+
+og_mega_data_assessed <- og_mega_data %>% 
+  filter(Manage == 1)
+
+
+missing_scinames <- unique(upsides_bau_assessed$sci_name)[!(unique(upsides_bau_assessed$sci_name) %in% unique(og_mega_data_assessed$SciName))]
+
+missing_ua_scinames <- unique(og_mega_data_unassessed$SciName)[!(unique(og_mega_data_unassessed$SciName) %in% unique(upsides_bau_unassessed$sci_name))]
+
+
+new <- unique(og_mega_data$SciName)[!(unique(og_mega_data$SciName) %in% unique(upsides$sci_name))]
+
+upsides_megadata <- read_rds(here("results","local_dd", "upsides_megadata.rds"))
+
+usable_stocks <- n_distinct(upsides_megadata$stockid)
+
+```
+
+
+The stocks utilized in @sala2021 are built out of the values reported in
+@costello2016. It should be possible then to re-run the global MPA
+network prioritization used in @sala2021 but instead using the component
+stocks from @costello2016. However, the "global" unassessed stocks do not consistently reflect the sum of their constituent unassessed stocks, and there are some discrepancies
+in the actual listed stocks themselves.
+
+The food provision analyses used in @sala2021 depend on results from
+@cabral2020, in particular an object called `MegaData_Ray`, which
+contains the estimates of life history parameters and BAU stock status
+for each of the stocks included in @sala2021
+(<https://github.com/rencabral/pnas-correction-food,https://datadryad.org/stash/dataset/doi:10.25349/D9N89M>).
+
+`MegaData_Ray` was produced as a correction to errors made in the BAU
+fishing mortality rates for assessed (in the RAM Legacy Stock Assessment
+Database, RLSADB) stocks in the original version of @cabral2020.
+However, examination of `MegaData_Ray`
+found some inconsistencies in their methods. As such, in order to ensure
+we were able to create stocks that were as identical as possible in
+every way except for the assumptions tested here, we rebuilt the set of
+candidate stocks using the original `MegaData_Ray` object provided by Sala *et al.* (called `MegaData` from now on).
+
+Running the methods of @sala2021 requires habitat layers from @kaschner2019. These layers were provided for @cabral2020, but not for @sala2021. However, there were `r n_distinct(new_stocks)` stocks with a total MSY of `r round(sum(og_mega_data$MSYfin[og_mega_data$stockid %in% new_stocks]) / 1e6,1)` MMT, listed in @sala2021 that were not present in the version of @cabral2020 for which carrying capacity estimates were made available. We could not use these stocks as we did not have access to the required carrying capacity estimates. 
+
+In order to compare differences in outcomes based only on core assumptions, we needed to have exact matches between the stocks used in the "Global" assumptions set representative of the assumptions used in @sala2021 and those used in the "Regional" assumptions based on @costello2016. However, there are `r length(new)` species reported as used in @sala2021 that are not present in the the estimates from @costello2016 that we have access to. There are also `r n_distinct(missing_scinames)` species listed as "assessed" by @costello2016 that are listed as unassessed by @sala2021. 
+
+Given these challenges then, it was not possible for us to generate
+alternative scenarios for each of the exact stocks listed in @sala2021.
+As such, we focus on the subset of stocks for which we can make
+comparisons across the different sets of assumptions, i.e. for which we were able to make exact matches with @costello2016, totaling `r usable_stocks` out of the `r nrow(og_mega_data)` reported by @sala2021. With this subset of matching stocks we can then ask, how sensitive are the outcomes
+and design of global MPA networks to the assumptions presented in @sala2021?
+
+### Assessed Stocks
+
+For assessed stocks, we restricted our analyses to stocks with exact
+stock ID matches between @sala2021 and @costello2016. We then updated
+the business as usual fishing mortality rates based on the F/F~MSY~
+values reported in RLSADB version v4.495
+(<https://zenodo.org/record/4824192>) in the `UdivUmsypref` entry, which
+per the official RLSADB documentation and personal communication with
+RLSADB staff is the preferred estimate of fishing mortality rates
+relative to MSY based reference points for use in food-security style
+questions [^1]. These then provide the business as usual F/F~MSY~ values
+for assessed stocks that are held constant across all scenarios.
+
+[^1]: `UdivUmsypref` uses either the discrete or instantaneous fishing
+    mortality rate relative to the MSY based reference point, whereas
+    `FdivFmsy` only contains the instantaneous fishing mortality rates.
+
+The model used in @sala2021 is based on exploitation rates, not F/F~MSY~
+values. In order to compare outcomes under both Pella-Tomlinson and
+Schaefer population models, we calculated the exploitation rate that
+would produce the desired F/F~MSY~ values conditional on the life
+history parameters and the population models.
+
+For the Pella-Tomlinson (PT) model used in the "Regional" assumptions,
+$F_{MSY} = g$ [@costello2016], with $g$ being the Pella-Tomlinson growth
+coefficient. For each assessed stock, we pulled $g$ from @costello2016,
+and then calculated the business as usual exploration rate for those
+assessed stocks as
+
+$$F_{BAU}^{PT} = \frac{F}{F_{MSY}}g.$$
+
+To ensure internal consistency with the MSY values used in @sala2021 and
+the Pella-Tomlinson structure, we then adjust the carrying capacity *K*
+following @costello2016 as:
+
+$$K = \frac{MSY(\phi+ 1)^{1/\phi}}{g}.$$
+
+For the assessed stocks under the Schaefer assumption, we calculated
+$F_{BAU}$ as
+
+$$F_{BAU}^{SHF} = (\frac{F}{F_{MSY}})r/2.$$
+
+Where $r$ is the logistic growth rate reported in @sala2021 and (with
+$F_{MSY} = r/2$ under the Schaefer model).
+
+In summary then, for the assessed stocks, we filtered down the assessed
+stocks to those with matches in @costello2016, used the same MSY values
+as @sala2021, adjusted the F/F~MSY~ values based on current values in
+the RLSADB, and calculated the correct $F_{BAU}$ for each stock given
+these parameters and selected population dynamics model, adjusting $K$
+as needed. This then gives us a set of assessed stocks with the same MSY
+and business as usual $F/F_{MSY}$ but different underlying population
+models that are internally consistent with the methods that create the
+parameters/data used by @sala2021.
+
+### Constructuing Unassessed Stocks
+
+The unassessed stocks required a different set of steps to create a
+comparable set of stocks between the "Regional" and "Global"
+assumptions. First, there are numerous stocks listed as species level
+unassessed (i.e. not the RAM Legacy Stock Assessment Database) stocks
+by @sala2021 but which are not listed as such in the @costello2016
+estimates. Inspection suggests that some of these species are listed as
+"unassessed" by @sala2021 but "assessed" by @costello2016. However, it
+is beyond the scope of this analysis to attempt to diagnose the reasons
+for these discrepancies. Second, for the stocks that do match, according
+to the methods from @cabral2020 the "unassessed" stocks for a given
+species are constructed based on the sum of the individual MSY values
+for each individual unassessed stocks within that species. When
+comparing the global stock MSY values used in @sala2021 to the sum of
+the individual stock MSY's reported in @costello2016 for projection under the business as usual - conservation concern policy (on which @sala2021 is based), while the totals
+match up for most stocks, for many the total MSY used in @sala2021 greatly
+exceeds the sum of the MSYs reported in
+@costello2016 (Fig.\@ref(fig:msy-comp)). The reason for this discrepancy
+is not clear to us. 
+
+
+
+```{r msy-comp, fig.cap="Comparison of total MSY for unassessed species reported in @sala2021 (y-axis) to sum of MSY values per species used in @costello2016 projections. Each point represents one unassessed stock from @sala2021."}
+
+
+sala_ua_msy <- MegaData %>% 
+  filter(Manage == 0)
+
+upside_ua_msy <- upsides_bau %>%
+  filter(sci_name %in% unique(sala_ua_msy$SciName),
+         dbase == "FAO",
+         id_level == "Species")
+
+total_upside_msy <- upside_ua_msy %>% 
+  group_by(sci_name) %>% 
+  summarise(upsides_msy = sum(msy))
+
+msy_comparison <- sala_ua_msy %>% 
+  select(SciName,contains("MSY")) %>% 
+  left_join(total_upside_msy, by = c("SciName" = "sci_name")) %>% 
+  mutate(ratio = MSYfin / upsides_msy)
+
+msy_comparison %>% 
+  ggplot(aes(upsides_msy, MSYfin, size = MSYfin)) + 
+  geom_abline(slope = 1, intercept = 0) +
+  geom_point(alpha = 0.5) + 
+  scale_x_continuous("Sum of Costello et al. (2016) MSY Values") + 
+  scale_y_continuous("Total MSY reported in Sala et al. (2021)") + 
+  scale_size(trans = "sqrt", name = "Sala et al. MSY")
+  
+
+```
+
+To create the "Regional" version of the unassessed stocks, we used all
+the life history parameters from @costello2016 (MSY, K, g, business as
+usual F/F~MSY~). We then needed to match the spatial proportions of
+carrying capacity used in @sala2021 to the stock definitions used in
+@costello2016. To do this, for a given stock from @costello2016, we
+clipped the shapefile for the FAO statistical area of the stock in
+question to the exclusive economic zone (EEZ) of the country of the
+stock in question (except for multinational stocks such as tunas in
+@costello2016 which were only clipped to the FAO statistical area). We
+then clipped the habitat layer used in @sala2021 to the @costello2016
+stock structure, and normalized the habitat values in the new clipped
+stock structure to sum to 1 for each stock.
+
+We provide an illustration of this below. The largest unassessed stock,
+by MSY, used in @sala2021 is largehead hairtail (*Trichiurus lepturus*).
+Under the stock structure used in @sala2021, largehead hairtail is a
+pan-global stock (Fig.\@ref(fig:hairtail-map)-A). However, according to
+the FAO catch statistics and by extension the stock structure used in
+@costello2016, largehead hairtail are caught in a large number of
+countries, but far fewer than those assumed by @sala2021, and critically,
+the distribution of the catch is much different, with nearly all of the
+reported catch coming from the Northwest Pacific by China
+(Fig.\@ref(fig:hairtail-map)-B).
+
+So, under the "Regional" assumption, we match the stock structure of
+@costello2016, which in this case assumes that every polygon is an
+independent stock, i.e. MPAs off of Florida, USA have no impact on stock
+status of largehead hairtail off of China. Under the "Global" assumption
+used by @sala2021, as there is only one global largehead hairtail stock,
+MPAs protecting equivalent amounts of habitat off of Florida can have
+just as large of an impact on largehead hairtail as those off of China.
+
+\newpage
+
+```{r hairtail-map, fig.cap="Comparison of stock structure for largehead hairtail (*Trichiurus lepturus*) under the A) assumptions of Sala *et al.* (2021) (*Global*) and B) @costello2016 (*Regional). In A), color shows fraction of global carrying capacity per cell. In B), color shows MSY estimated for each stock by @costello2016, with each polygon representing a separate stock.", fig.width=6, fig.height=8}
+# map comparing distribution of a species under costello et al and per their version
+
+tmp <- cell_coords %>% 
+  mutate(k_per_cell = as.numeric(k_per_cell[which(MegaData$SciName == "Trichiurus lepturus")[1],])) %>% 
+  sf::st_as_sf(coords = c("lon", "lat"),
+               crs = sf::st_crs(land_shp_moll)) %>% 
+  filter(k_per_cell > 0) 
+
+sala_hairtail_map <- tmp %>% 
+  ggplot(aes(color = k_per_cell)) + 
+  geom_sf(data = land_shp_moll, fill="black", lwd = 0, inherit.aes = F)+
+  geom_sf(size = .1) + 
+  scale_color_viridis_c(name = "K",guide = guide_colorbar(
+        barwidth = unit(10, "lines"),
+        frame.colour = "black",
+        ticks.colour = "black"
+      )) + 
+  labs(title = "a) Global Stock Structure") + 
+  theme(legend.position = "top")
+
+
+  upsides_hairtail <- upsides_historic %>% 
+    filter(sci_name == "Trichiurus lepturus") %>% 
+    group_by(iso3_country_name, region_fao,id_orig) %>% 
+    summarise(msy = unique(msy), 
+              catch = catch[year == max(year)]) %>% 
+    ungroup() %>% 
+    rename(fao_area_code = region_fao,
+           iso3c_name = iso3_country_name, 
+           stockid = id_orig)
+    
+  tmp_layer <- eez_fao_layer %>%
+    left_join(upsides_hairtail, by = c("iso3c_name", "fao_area_code")) %>%
+    filter(!is.na(msy))
+  
+
+  upsides_hairtail_map <- ggplot() +
+    geom_sf(data = tmp_layer, aes(fill = msy), color = "white", lwd = 0.1) +
+    geom_sf(data = land_shp_moll, fill = "black",  lwd = 0,color = "transparent") +
+    scale_fill_viridis_c(
+      name = "MSY",
+      guide = guide_colorbar(
+        barwidth = unit(10, "lines"),
+        frame.colour = "black",
+        ticks.colour = "black"
+      )
+    ) +
+    scale_color_discrete(guide = "none") +
+    theme(legend.position = "top") + 
+    labs(title = "B) Regional Stock Structure")
+  
+  
+  
+  comparison <- sala_hairtail_map / upsides_hairtail_map
+  
+      # ggsave("test.png",comparison)
+
+  comparison
+
+
+```
+
+\newpage
+
+Once we had created the divided unassessed stocks for the "Regional"
+assumptions, we had to ensure that the total MSYs matched up between the
+"Regional" and "Global" assumptions, since in the raw data provided from
+@sala2021 the total MSYs for many unassessed stocks do not match their
+constituent parts (Fig.\@ref(fig:msy-comp)). For each unassessed
+species, we summed the MSYs for each individual stock used in the
+"Regional" assumptions, and then set the total MSY for that species in
+the "Global" assumption to that value, correcting the Schaefer carrying
+capacity *K* accordingly
+
+$$K = \frac{4MSY}{r}.$$
+
+```{r}
+
+
+upsides_msy <- upsides_megadata %>% 
+  filter(Manage == 0) %>% 
+  group_by(SciName) %>% 
+  summarise(upsides_msy = sum(MSYfin))
+
+MegaData <- MegaData %>% 
+  left_join(upsides_msy, by = "SciName")
+
+sala_msy <- sum(MegaData$MSYfin)
+
+MegaData$MSYfin[MegaData$Manage == 0] <- MegaData$upsides_msy[MegaData$Manage == 0]
+
+MegaData$Kfin[MegaData$Manage == 0] <- (MegaData$MSYfin[MegaData$Manage == 0] * 4) / MegaData$r[MegaData$Manage == 0]
+
+check <- MegaData$MSYfin / ((MegaData$r * MegaData$Kfin) / 4)
+
+upsides_msy <- sum(MegaData$MSYfin, na.rm = TRUE)
+
+msy_present <- scales::percent(upsides_msy / sala_msy)
+
+
+```
+
+
+We chose to downscale to the MSY values reported in @costello2016 in
+order to preserve the covariance across the other parameters needed for
+projection; had we "upscaled" to the total MSY reported in @sala2021 a)
+we would not have known how to distribute the almost universally higher
+(Fig.\@ref(fig:msy-comp)) MSY values across the constituent stocks, and
+b) existing values for growth rate and carrying capacity needed for
+projection would be inconsistent with this new MSY. The resulting MSY values represent `r msy_present` of the total MSY values reported in @sala2021. 
+
+
+
+## Population Models
+
+@sala2021 converted the methods of @costello2016 into a Schaefer model,
+which provides an analytical solution to the equilibrium state of their
+model. We modified their methods to construct a numerical simulation
+model for the biomass dynamics of fished populations with MPAs that a)
+can handle two different options for spatial scale of density dependence
+and b) subs in a Pella-Tomlinson model for the growth dynamics.
+
+### "Pooled" vs. "Local" density dependence
+
+Density dependence at one or more life stages is a key part of
+population dynamics, and takes many different forms in different
+population models. The exact functional form and life history timing of
+density dependence will vary depending on the biology and ecology of the
+species in question. One key question for this analysis is whether
+density dependence is a function of the biomass in a specific area (say
+inside vs. outside of an MPA) or across the entire population. Neither
+is inherently right; as pointed out by @hastings1999 and illustrated in
+@babcock2011 (See Table 1 therein), a wide range of combinations of
+timing and location of density dependence are possible when considering
+spatial dynamics.
+
+@sala2021 assumes a form of density dependence in which density
+dependence is a function of the total biomass in the population, defined
+as the sum of biomass insides and outside of the MPAs. Whether in
+Pella-Tomlinson mode or Schaefer mode, within the context of a biomass
+dynamics model, this implies that density dependent growth is a function
+of
+
+$$f\left(\frac{B_{inside} + B_{outside}}{K_{global}} \right).$$
+
+In contrast, "local" density dependence function implies that density
+dependent growth is a function of the biomass within a specific
+location, while local biomass may still benefit from production
+elsewhere (i.e., through immigration)
+
+$$f\left(\frac{B_{inside}}{K_{inside}} \right).$$
+
+Both forms can be applicable in different circumstances, and each has
+advantages and disadvantages within the limiting constraints of a
+two-patch biomass dynamics model. We would note that the "local" set of
+assumptions are widely used in MPA modeling, including in papers
+authored by members of Sala *et al.* . @sala2013 (equation 6) and by
+extension @sala2016 assume that density dependence is a function of
+local spawning biomass, not pooled, as does @cabral2019 (equations 4 and
+5). @hastings1999 as well
+as @rassweiler2012, and @rassweiler2014 (used in tactical modeling of
+MPAs in the Channel Islands, USA) all use forms of local density
+dependence. Each of them makes different assumptions about *dispersal*,
+but conditional on dispersal, in each of these papers density dependence
+is a function of some local attribute in a given patch, not a sum across
+all patches in the model.
+
+Both local and global density dependence can be justified under
+different circumstances. It is important to consider though, that there
+is no such thing as isolated "larvae" or "recruits" in a surplus
+production model: Models such as the logistic one used in @sala2021 or
+the Pella-Tomlinson model used here and in @costello2016 both model the
+**total biomass** of the population at one time. Under these models
+density dependent growth represents the total change in biomass
+resulting from the sum of recruitment, survival, and somatic growth
+across all age groups. As such, assuming "pooled" density dependence is
+not equivalent to only assuming global larval dispersal, density
+dependence, and the reallocation to home patches; it is also assuming
+that all the density dependent growth and mortality of the adult
+portions of the population are also a function of pooled, rather than
+local, biomass, and similarly distributed then reallocated.
+
+### Pella-Tomlinson Model Structure and Local vs. Pooled Density Dependence
+
+We follow the same Pella-Tomlinson structure used in @costello2016
+although modified to allow for the kinds of two-patch MPA dynamics used
+in @sala2021. Population model was written in C++ with the `Rcpp` package [@eddelbuettel2018]. Under "local" density dependence, the equations are as
+follows, where *B* is biomass, *t* is time, $\phi$ scales the shape of
+the production curve (set to 0.188 per @costello2016, such that
+$B_{MSY}/K = 0.4$, *g* is the growth rate, *K* is the carrying capacity,
+*R* is the proportion of the total carrying capacity inside the MPA
+([0,1]), and *m* is the movement rate:
+
+$$
+\begin{aligned}
+B_{t+1,MPA = 1} = B_{t,MPA = 1} + \frac{\phi + 1}{\phi}gB_{t,MPA = 1} \left(1 - \left(\frac{B_{t,MPA = 1}}{K \times R}\right)^{\phi} \right) \\ - m(B_{t,MPA = 1} - \frac{R}{1 - R}B_{t,MPA = 0}).
+\end{aligned}
+$$
+
+$$
+\begin{aligned}
+B_{t+1,MPA = 0} = (1 - u_t) \times ( B_{t,MPA = 0} + \frac{\phi + 1}{\phi}gB_{t,MPA = 0} \left(1 - \left(\frac{B_{t,MPA = 0}}{K \times (1 - R)}\right)^{\phi} \right) \\ +  m\left(B_{t,MPA = 1} - \frac{R}{1 - R}B_{t,MPA= 0}\right) ).
+\end{aligned}
+$$
+
+Under "pooled" density dependence
+
+$$B_{t,Total} = B_{t,MPA = 1} + B_{t,MPA = 0},$$
+
+$$
+\begin{aligned}
+B_{t+1,MPA = 1} = B_{t,MPA = 1} + R \frac{\phi + 1}{\phi}gB_{t,Total} \left(1 - \left(\frac{B_{t,Total}}{K}\right)^{\phi} \right) \\ -  m\left(B_{t,MPA = 1} - \frac{R}{1 - R}B_{t,MPA=0}\right).
+\end{aligned}
+$$
+
+$$
+\begin{aligned}
+B_{t+1,MPA = 0} = (1 - u_t) \times ( B_{t,MPA = 0} + (1 - R) \frac{\phi + 1}{\phi}gB_{t,Total} \left(1 - \left(\frac{B_{t,Total}}{K}\right)^{\phi} \right) \\ +  m\left(B_{t,MPA = 1} - \frac{R}{1 - R}B_{t,MPA=0}\right) ).
+\end{aligned}
+$$
+
+Note that both the "local" and "pooled" density dependence forms allow
+for movement between the fished and MPA patches. The difference is
+whether density dependent growth occurs locally and is then dispersed
+(local), or whether density dependent growth of all kinds occurs as a
+total pool and then is redistributed to each patch in proportion to its
+size.
+
+## MPA Design Algorithm
+
+@sala2021 assigns MPA by iteratively calculating the marginal food
+provision effects of converting each individual fished cell in their
+model to an MPA, adding the top ranked cell to the MPA network, and then
+repeating the process with the remaining fished cells until all cells
+are placed inside an MPAs.
+
+This process is feasible given the analytical solutions used in
+@sala2021. However, the *Regional* set of assumptions requires numerical
+simulations, which make the MPA design process used in @sala2021
+cumbersome. We created a modified version of their MPA design process
+using a version of a Sampling Important Resampling (SIR) algorithm.
+
+In the first phase of the process, the algorithm calculates the marginal
+food provision value of every cell in the model, assigning the top
+ranked cell as its first MPA. For subsequent steps, the model samples
+2,500 cells (or the number of cells remaining, whichever is lower) out
+of the total possible, with sampling weighted by the marginal food
+provision values in the last iteration. The marginal food provision
+values of each of the sampled cells is calculated, and the top ranked
+cell is added to the MPA network. The 2,499 cells not selected are
+returned to the pool, and their prior marginal food provision values are
+updated. In this way, the algorithm searches over a smaller space for
+the next MPA cell, concentrating on cells that had close to the best
+performance in the last iteration, while updating the value of
+non-selected cells. This process continues until all the cells are
+placed inside an MPA network. This process also allows us to pick MPAs at a finer resolution of 25 cells at a time rather than the 100 cells at a time reported in @cabral2020. 
+
+\newpage
+
+# Sensitivity Analyses
+
+| Assumption Set Name | Unassessed Range | Population Dynamics | Density Dependence |
+|---------------------|------------------|---------------------|--------------------|
+| Global              | Global           | Schaefer            | Pooled             |
+| Regional            | @costello2016    | Pella-Tomlinson     | Local              |
+| Regional-Pooled     | @costello2016    | Pella-Tomlinson     | Pooled             |
+
+: Summary of assumption sets run. "Unassessed Range" refers to the
+assumed stock structure use for unassessed stocks, with @costello2016
+indicating that the same assumptions as @costello2016 is used.
+
+## Country-Level Stocks, Global Density Dependence
+
+In order to test the sensitivity of our results to the choice of "local"
+vs "pooled" density dependence, we re-ran our analysis keeping
+everything constant except for the spatial scale of density dependence,
+turning it to "pooled" instead of "local". Results differ somewhat from those produced with "local" density
+dependence presented in the main paper, but present the same general
+findings of lower potential upside, smaller proportion of carrying
+capacity protected, and a fundamentally restructured global
+prioritization map (Fig.\@ref(fig:global-yield),
+Fig.\@ref(fig:global-map))
+
+```{r global-yield,fig.cap="Change in global yield as a function of percent of global carrying capacity (K) in MPAs (a) and percent of global ocean surface in MPAs (b). *Global* indicates that both stocks and density dependence are assumed to occur at global scales, following @sala2021 . *Regional* indicates that stocks are modeled in the same manner as @costello2016 with pooled density dependence in this sensitivity analysis", include=TRUE,fig.width=3.5, fig.height=5.25}
+knitr::include_graphics(here("results","pooled_dd","fig_1.pdf"))
+```
+
+```{r global-map,fig.cap="Spatial differences in MPA outcomes between alternative assumptions. Map (a) shows cells identified in the top 30% of MPAs, where color indicates which set of assumptions produced which cells, with overlapping cells indicated by the ‘Overlap’ color. Bars (b) indicate the percent of the top-ten countries' by recent FAO reported catches EEZs each assumption set projects could be placed inside food increasing MPAs. Existing MPAs omitted as these are automatically included by the model. *Global* assumes one global stock per unassessed species and pooled density dependence, following @sala2021 . *Regional* indicates that stocks are modeled in the same manner @costello2016 with pooled density dependence in this sensitivity analysis.", include=TRUE, fig.width=7.2, fig.height=5}
+knitr::include_graphics(here("results","pooled_dd","fig_2.pdf"))
+```
+
+\newpage
+
+## Fishing Causes Increase in MPA Biomass Under Global Density Dependence
+
+One of the unusual features of the pooled density dependence and
+movement models used in @sala2021 is that under these dynamics, it is
+possible for fishing outside of MPAs to actually increase fish
+biomass inside the MPA relative to the biomass in the MPA in the absence
+of any fishing anywhere.
+
+We demonstrate this using a Schaefer model with the same density
+dependence and movement dynamics used in @sala2021
+(Fig.\@ref(fig:dd-effect))
+
+```{r dd-effect, fig.cap= "Equilibrium depletion (biomass divided by carrying capacity *K*) inside a marine protected area covering 30% of a region as a function of the fishing mortality rate outside the MPA. Color represents movement rate, panel indicates which form of density dependence is used, with the 'Pooled' implying that density dependence is a function of biomass inside and outside the MPA, while the 'Local' implies that growth inside the MPA is a function of biomass inside the MPA."}
+
+k <- 1
+
+r <- 0.4
+
+mpa <- 0.3
+
+
+scenes <- expand_grid(m = c(0,0.1,0.3,0.9),
+                      u = seq(0, 1, by = 0.05),
+                      dd = c("Pooled","Local"),
+                      mpa = mpa)
+
+
+popfoo <- function(m,u,r, mpa, k, years = 100, dd = "Pooled") {
+  
+  b <- matrix(NA, nrow = years, ncol = 2)
+  
+  b[1, ] <- c(k * mpa, k * (1 - mpa))
+  
+  mu <- m * (1 - mpa)
+  
+  h <- rep(NA, years)
+  
+  for (i in 2:years) {
+  
+    
+    if (dd == "Pooled"){
+    # inside MPA
+     b[i, 1] <-
+      b[i - 1, 1] + mpa * r * (sum(b[i - 1, ])) * (1 - sum(b[i - 1, ]) / k) - mu * (b[i - 1, 1] - (mpa / (1 - mpa)) * b[i - 1, 2])
+    
+     
+     
+     # outside MPA
+     
+     b[i, 2] <-
+       (1 - u) * b[i - 1, 2] + (1 - mpa) * r * (sum(b[i - 1, ])) * (1 - sum(b[i - 1, ]) / k) + mu * (b[i - 1, 1] - (mpa / (1 - mpa)) * b[i - 1, 2])
+     
+     
+    } else {
+      
+      
+      b[i, 1] <-
+        b[i - 1, 1] +  r * b[i - 1,1] * (1 - b[i - 1, 1] / max(1e-3,(k * mpa))) - mu * (b[i - 1, 1] - (mpa / (1 - mpa)) * b[i - 1, 2])
+
+
+      # outside MPA
+
+      b[i, 2] <-
+        (1 - u) * b[i - 1, 2] + r * b[i - 1, 2] * (1 - b[i - 1 , 2] / max(1e-3,(k * (1 - mpa)))) + mu * (b[i - 1, 1] - (mpa / (1 - mpa)) * b[i - 1, 2])
+
+
+    }
+    
+    h[i-1] <- u *  b[i - 1, 2] 
+    
+  }
+  
+  h[i] <- u * b[i,2]
+  
+  
+  check <- ((m * k * (1 - mpa)) / (u * mpa + m)) * (1 - (u * (1 - mpa) * m)/((u * mpa + m) * r))
+  
+  check / b[years,2]
+  
+  out <- b %>% 
+    data.frame() %>% 
+    mutate(year = 1:years)
+  
+  colnames(out) <- c("inside",'outside',"year")
+  
+  out$h <- h
+  
+  return(out)
+  
+  # out %>%
+  #   ggplot(aes(1:nrow(.), inside)) + 
+  #   geom_line()
+  
+}
+
+scenes <- scenes %>% 
+  mutate(huh = pmap(list(m = m,u = u, dd = dd, mpa = mpa),popfoo, k = k, years = 100, r = r))
+
+scenes <- scenes %>% 
+  unnest(cols = huh)
+
+scenes %>%
+  filter(year == max(year)) %>%
+  ggplot(aes(u, inside / k, color = factor(m))) +
+  geom_line(size = 2) +
+  labs(x = "Fishing Mortality Outside MPA",
+       y = "Biomass Inside MPA as a Fraction of Total K",
+       title = paste0(scales::percent(mpa), ' in MPA')) +
+  scale_color_discrete(name = "Movement") +
+  facet_wrap( ~ dd) +
+  scale_x_continuous(labels = scales::label_percent(accuracy = 1))
+
+
+# scenes %>% 
+#   filter(year == max(year)) %>% 
+#   ggplot(aes(u,outside / k, color = factor(m))) + 
+#   geom_line() + 
+#   labs(x = "Harvest Fraction",
+#        y = "Biomass Outside Reserve as a Fraction of K",
+#        title = paste0(scales::percent(mpa), ' in MPA')) + 
+#   scale_color_discrete(name = "Movement") + 
+#   facet_grid(mpa~dd)
+
+
+# 
+# msy <- (r * k) / 4
+# scenes %>% 
+#   filter(year == max(year)) %>% 
+#   ggplot(aes(u,h / msy, color = factor(m))) + 
+#   geom_line() + 
+#   labs(x = "Harvest Fraction",
+#        y = "Catch / MSY",
+#        title = paste0(scales::percent(mpa), ' in MPA')) + 
+#   scale_color_discrete(name = "Movement") + 
+#   facet_grid(mpa~dd)
+
+# scenes %>% 
+#   filter(year == max(year)) %>% 
+#   select(u,h,m,mpa,dd) %>% 
+#   pivot_wider(names_from = dd, values_from = h) %>% 
+#   mutate(dd_effect = global - local) %>% 
+#   ggplot(aes(u,dd_effect / msy, color = factor(m))) + 
+#   geom_line() + 
+#   labs(x = "Harvest Fraction",
+#        y = "Effect of Global Density Dependence as Fraction of MSY",
+#        title = paste0(scales::percent(mpa), ' in MPA')) + 
+#   scale_color_discrete(name = "Movement") 
+
+
+```
+
+# Stock Footprint Size
+
+We can compare the size of the stock footprint for the assessed stocks
+used in @sala2021, that uses the spatial footprints created by @free2019
+for each of the assessed stocks, to those for the "unassessed" stocks
+that use the Aquamaps species distribution model (SDM) as the footprint.
+While the RAM footprints are not definitive, they provide a sense of
+what experts have judged to be the range of a connected biological
+stock.
+
+@sala2021 assumes that proportion of K is proportional to the Aquamaps
+SDM. So, rather than simply summing the number of cells with "K" \> 0
+for each species, we calculate a K-weighted footprint as
+
+$$footprint_s = \sum_{i=1}^I\frac{k_{i,s}}{max(\pmb{k_s})}.$$
+
+```{r}
+footprint <- as.data.table(k_per_cell)
+
+tmp <- cell_coords %>% 
+  mutate(k_per_cell = as.numeric(k_per_cell[1,])) %>% 
+    sf::st_as_sf(coords = c("lon", "lat"),
+               crs = sf::st_crs(land_shp_moll)) %>% 
+  filter(k_per_cell > 0) 
+
+
+# a really rough measure of footprint is just the number of positive cells
+
+raw_footprint <- rowSums(footprint > 0)
+
+foo <- function(x){
+  y = x / max(x)
+}
+
+k_footprint <-  colSums(apply(footprint,1,foo)) # colsums since for some reason this flips things 
+
+# k footprint is a measure of how concentrated the population is. If every cell has the same k, then k_footprint == raw_footprint. But, if 99.9% of K is in 1 cell and the rest is in 1000 other cells, K footprint will be small
+
+
+footprint <- MegaData %>% 
+  select(SciName, Manage) %>% 
+  mutate(footprint = raw_footprint,
+         k_footprint = k_footprint)
+
+
+foot_dist_plot <- footprint %>% 
+  ggplot(aes(k_footprint, fill = Manage == 1)) + 
+  geom_density(alpha = 0.75) + 
+  scale_x_log10(name = "K Footprint Size (note log(10) scale)") + 
+  scale_fill_discrete(name = "", labels = c("Unassessed","Assessed")) + 
+  theme(legend.position = "top")
+
+
+foot_delta <- footprint %>%
+  group_by(Manage) %>%
+  summarise(
+    median_k_footprint = median(k_footprint),
+    mean_k_footprint = mean(k_footprint)
+  )
+
+```
+
+where *k* is the "carrying capacity" for species *s* in cell *i* from
+KprotectedPerCell_Library. So, for a species where $k_i$ is equal in
+every patch, *footprint* will equal the number of cells. But, if the
+$k_i$ are much greater in some patches than in others, the k-weighted
+footprint will be smaller.
+
+Implementing this measure shows that there are stark differences between
+these two footprints: the median unassessed fishery has a k-weighted
+footprint roughly
+`r round(foot_delta$median_k_footprint[foot_delta$Manage == 0] / foot_delta$median_k_footprint[foot_delta$Manage == 1])`
+times greater than the median assessed stock, with many unassessed
+stocks having order of magnitude greater spatial footprints than
+assessed stocks (Fig\@ref(fig:footprint)).
+
+```{r footprint, fig.cap = "Comparison of K-weighted spatial footprint size between unassessed and assessed stocks. A) Distribution of individual stocks (Note Log(10) scale of axis) B) difference in median K-weighted footprint size"}
+
+
+foot_delta_plot <- foot_delta %>% 
+  ggplot(aes(Manage == 1, median_k_footprint)) + 
+  geom_col(aes(fill = Manage == 1),show.legend = FALSE, alpha = 0.75) +
+  scale_x_discrete( labels = c("Unassessed","Assessed"), name = '') + 
+  scale_fill_discrete(name = "", labels = c("Unassessed","Assessed"),guide = "none" ) + 
+  scale_y_continuous(name = "Median Stock Footprint Size")
+
+
+foot_dist_plot + foot_delta_plot + plot_annotation(tag_levels = 'A')
+
+
+```
+
+\newpage
+
+# Fished Area Exploitation Rates
+
+
+```{r us}
+ us <-  readRDS(file = here("results","local_dd",
+                           "global_exploitation_rate.rds"))
+
+
+k_per_critter <- read_rds(file = here("results","local_dd","k_per_critter.rds")) 
+
+
+k_per_critter = t(apply(k_per_critter, 1, cumsum)) # calculate the cumulative sum of proportion of K protected per critter
+
+# rough downscaling of K data to match US sampling size
+
+spacers <- round(seq(1,ncol(k_per_critter), length.out = nrow(us)))
+
+
+down_k_per_critter <- k_per_critter[,spacers]
+# 
+# 
+colnames(down_k_per_critter) <- 1:length(spacers)
+# 
+down_k_per_critter <- down_k_per_critter %>%
+  as.data.frame() %>% 
+  mutate(critter = 1:nrow(.)) %>%
+  pivot_longer(-critter, names_to = "loc", values_to = "k_protected")  %>%
+  mutate(loc = as.integer(loc))
+
+
+us <- us %>% 
+  as.data.frame() %>% 
+  mutate(loc = 1:nrow(.)) %>% 
+  mutate(mpa = loc / max(loc)) %>% 
+  pivot_longer(c(-loc,-mpa), values_to = "u", names_to = "critter", names_prefix = "V") %>% 
+  mutate(critter = as.integer(critter)) %>% 
+  left_join(down_k_per_critter, by = c("critter", "loc"))
+```
+
+```{r u-v-space,fig.cap="Trajectory of fishing mortality rates in fished areas as a function of increasing percent of cells inside an MPA. Each line represents an individual stock."}
+us %>% 
+  ggplot(aes(mpa,u, color = as.factor(critter))) + 
+  geom_line(show.legend = FALSE, alpha = 0.25) + 
+  scale_x_continuous(labels = scales::percent, name = "MPA Size") + 
+  scale_y_continuous(labels = scales::percent, name = "Fishing Mortality Rate Outside MPAs")
+
+
+```
+
+```{r u-v-k,fig.cap="Trajectory of fishing mortality rates in fished areas as a function of increasing percent of carrying capacity (K) inside an MPA. Each line represents an individual stock."}
+us %>% 
+  ggplot(aes(k_protected,u, color = as.factor(critter))) + 
+  geom_line(show.legend = FALSE, alpha = 0.25) + 
+  scale_x_continuous(labels = scales::percent, name = "Carrying Capacity in MPA") + 
+  scale_y_continuous(labels = scales::percent, name = "Fishing Mortality Rate Outside MPAs")
+
+
+```
+
+
+\newpage
+
+# References
+
+::: {#refs}
+
+:::
