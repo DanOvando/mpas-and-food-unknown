@@ -171,6 +171,7 @@ The core methods of @costello2016 are:
     statistical area, except for highly migratory unassessed stocks,
     which are assumed to be well-mixed within FAO major statistical
     areas.
+      - highly migratory species groups are defined as those species classified by the International Standard Statistical Classification of Aquatic Animals and Plants (ISSCAAP) as being one of 'Miscellaneous pelagic fishes', 'Tunas, bonitos, billfishes', and 'Cods, hakes, haddocks' [@costello2016]
 
 -   Given the catch history for that "stock" (generally defined by the
     intersection of taxa, country, and FAO statistical area), generate
@@ -300,7 +301,7 @@ candidate stocks using the original `MegaData_Ray` object provided by Sala *et a
 
 Running the methods of @sala2021 requires habitat layers from @kaschner2019. These layers were provided for @cabral2020, but not for @sala2021. However, there were `r n_distinct(new_stocks)` stocks with a total MSY of `r round(sum(og_mega_data$MSYfin[og_mega_data$stockid %in% new_stocks]) / 1e6,1)` MMT, listed in @sala2021 that were not present in the version of @cabral2020 for which carrying capacity estimates were made available. We could not use these stocks as we did not have access to the required carrying capacity estimates. 
 
-In order to compare differences in outcomes based only on core assumptions, we needed to have exact matches between the stocks used in the "Global" assumptions set representative of the assumptions used in @sala2021 and those used in the "Regional" assumptions based on @costello2016. However, there are `r length(new)` species reported as used in @sala2021 that are not present in the the estimates from @costello2016 that we have access to. There are also `r n_distinct(missing_scinames)` species listed as "assessed" by @costello2016 that are listed as unassessed by @sala2021. 
+In order to compare differences in outcomes based only on core assumptions, we needed to have exact matches between the stocks used in the "Global" assumptions set representative of the assumptions used in @sala2021 and those used in the "Regional" assumptions based on @costello2016. However, there are `r length(new)` species reported as used in @sala2021 that are not present in the estimates from @costello2016 that we have access to. There are also `r n_distinct(missing_scinames)` species listed as "assessed" by @costello2016 that are listed as unassessed by @sala2021. 
 
 Given these challenges then, it was not possible for us to generate
 alternative scenarios for each of the exact stocks listed in @sala2021.
@@ -619,7 +620,7 @@ but conditional on dispersal, in each of these papers density dependence
 is a function of some local attribute in a given patch, not a sum across
 all patches in the model.
 
-Both local and global density dependence can be justified under
+Both local and pooled density dependence can be justified under
 different circumstances. It is important to consider though, that there
 is no such thing as isolated "larvae" or "recruits" in a surplus
 production model: Models such as the logistic one used in @sala2021 or
@@ -643,7 +644,20 @@ follows, where *B* is biomass, *t* is time, $\phi$ scales the shape of
 the production curve (set to 0.188 per @costello2016, such that
 $B_{MSY}/K = 0.4$, *g* is the growth rate, *K* is the carrying capacity,
 *R* is the proportion of the total carrying capacity inside the MPA
-([0,1]), and *m* is the movement rate:
+([0,1]), $F$ is the fishing mortality rate, and *m* is the movement rate:
+
+$F$ can be calculated with or without effort displacement. 
+
+When effort displacement is turned off
+
+$$F_t = F_{BAU}$$
+
+When effort displacement is turned on, fishing mortality outside the MPAs increases proportionally to the size of the protected area, in the same manner as @sala2021 . 
+
+
+$$F_t = 1 - (1 - F_{BAU})^{\frac{1}{1 - R}} $$
+
+Under "local" density dependence, the population model is 
 
 $$
 \begin{aligned}
@@ -653,11 +667,11 @@ $$
 
 $$
 \begin{aligned}
-B_{t+1,MPA = 0} = (1 - u_t) \times ( B_{t,MPA = 0} + \frac{\phi + 1}{\phi}gB_{t,MPA = 0} \left(1 - \left(\frac{B_{t,MPA = 0}}{K \times (1 - R)}\right)^{\phi} \right) \\ +  m\left(B_{t,MPA = 1} - \frac{R}{1 - R}B_{t,MPA= 0}\right) ).
+B_{t+1,MPA = 0} = (1 - F_{t}) \times ( B_{t,MPA = 0} + \frac{\phi + 1}{\phi}gB_{t,MPA = 0} \left(1 - \left(\frac{B_{t,MPA = 0}}{K \times (1 - R)}\right)^{\phi} \right) \\ +  m\left(B_{t,MPA = 1} - \frac{R}{1 - R}B_{t,MPA= 0}\right) ).
 \end{aligned}
 $$
 
-Under "pooled" density dependence
+Under "pooled" density dependence, the population model is 
 
 $$B_{t,Total} = B_{t,MPA = 1} + B_{t,MPA = 0},$$
 
@@ -669,7 +683,7 @@ $$
 
 $$
 \begin{aligned}
-B_{t+1,MPA = 0} = (1 - u_t) \times ( B_{t,MPA = 0} + (1 - R) \frac{\phi + 1}{\phi}gB_{t,Total} \left(1 - \left(\frac{B_{t,Total}}{K}\right)^{\phi} \right) \\ +  m\left(B_{t,MPA = 1} - \frac{R}{1 - R}B_{t,MPA=0}\right) ).
+B_{t+1,MPA = 0} = (1 - F_{t}) \times ( B_{t,MPA = 0} + (1 - R) \frac{\phi + 1}{\phi}gB_{t,Total} \left(1 - \left(\frac{B_{t,Total}}{K}\right)^{\phi} \right) \\ +  m\left(B_{t,MPA = 1} - \frac{R}{1 - R}B_{t,MPA=0}\right) ).
 \end{aligned}
 $$
 
@@ -723,7 +737,7 @@ placed inside an MPA network. This process also allows us to pick MPAs at a fine
 assumed stock structure use for unassessed stocks, with @costello2016
 indicating that the same assumptions as @costello2016 is used.
 
-## Country-Level Stocks, Global Density Dependence
+## Country-Level Stocks, Pooled Density Dependence
 
 In order to test the sensitivity of our results to the choice of "local"
 vs "pooled" density dependence, we re-ran our analysis keeping
@@ -735,11 +749,11 @@ capacity protected, and a fundamentally restructured global
 prioritization map (Fig.\@ref(fig:global-yield),
 Fig.\@ref(fig:global-map))
 
-```{r global-yield,fig.cap="Change in global yield as a function of percent of global carrying capacity (K) in MPAs (a) and percent of global ocean surface in MPAs (b). *Global* indicates that both stocks and density dependence are assumed to occur at global scales, following @sala2021 . *Regional* indicates that stocks are modeled in the same manner as @costello2016 with pooled density dependence in this sensitivity analysis", include=TRUE,fig.width=3.5, fig.height=5.25}
+```{r global-yield,fig.cap="Change in global yield as a function of percent of global carrying capacity (K) in MPAs (a) and percent of global ocean surface in MPAs (b). Numbers and lines point to values at the peak of each curve. *Global* indicates that both stocks and density dependence are assumed to occur at global scales, following @sala2021.  *Regional* indicates that stocks are modeled in the same manner as @costello2016 with pooled density dependence in this sensitivity analysis", include=TRUE,fig.width=3.5, fig.height=5.25}
 knitr::include_graphics(here("results","pooled_dd","fig_1.pdf"))
 ```
 
-```{r global-map,fig.cap="Spatial differences in MPA outcomes between alternative assumptions. Map (a) shows cells identified in the top 30% of MPAs, where color indicates which set of assumptions produced which cells, with overlapping cells indicated by the ‘Overlap’ color. Bars (b) indicate the percent of the top-ten countries' by recent FAO reported catches EEZs each assumption set projects could be placed inside food increasing MPAs. Existing MPAs omitted as these are automatically included by the model. *Global* assumes one global stock per unassessed species and pooled density dependence, following @sala2021 . *Regional* indicates that stocks are modeled in the same manner @costello2016 with pooled density dependence in this sensitivity analysis.", include=TRUE, fig.width=7.2, fig.height=5}
+```{r global-map,fig.cap="Spatial differences in MPA outcomes between alternative assumptions. Map (a) shows cells identified in the top 30% of MPAs, where color indicates which set of assumptions produced which cells, with overlapping cells indicated by the ‘Overlap’ color. Bars (b) indicate the percent of the top-ten countries' (based on recent FAO reported catches) EEZs that could be placed inside food-increasing MPAs under each set of assumptions. Existing MPAs are omitted as these are automatically included by the model. *Global* assumes one global stock per unassessed species and pooled density dependence, following @sala2021 . *Regional* indicates that stocks are modeled in the same manner @costello2016 with pooled density dependence in this sensitivity analysis.", include=TRUE, fig.width=7.2, fig.height=5}
 knitr::include_graphics(here("results","pooled_dd","fig_2.pdf"))
 ```
 
@@ -833,10 +847,6 @@ popfoo <- function(m,u,r, mpa, k, years = 100, dd = "Pooled") {
   out$h <- h
   
   return(out)
-  
-  # out %>%
-  #   ggplot(aes(1:nrow(.), inside)) + 
-  #   geom_line()
   
 }
 

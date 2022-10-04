@@ -3,10 +3,11 @@ title: |
   | Global Effects of Marine Protected Areas 
   | on Food Security Are Unknown
 output: 
-  bookdown::pdf_document2:
-    latex_engine: xelatex
   bookdown::word_document2:
     reference_docx: template.docx
+    number_sections: false
+  bookdown::pdf_document2:
+    latex_engine: xelatex
 bibliography: references.bib
 linkcolor: blue
 urlcolor: blue
@@ -24,7 +25,7 @@ params:
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE,include = FALSE, dev = "pdf", dpi = 300)
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE,include = FALSE, dev = "png", dpi = 300)
 set.seed(225)
 # probably don't need all these but copying from Cabral et al
 library(bookdown)
@@ -57,7 +58,7 @@ Rcpp::sourceCpp(here('src', "sim_mpa.cpp"))
 
 local_cores <- 6 # number of cores for parallel processing
 
-theme_set(theme_cowplot())
+theme_set(theme_cowplot(font_family = "Helvetica"))
 
 sir_samps <- 2500 # set this to 1e9 or the like to do brute force instead of SIR
 
@@ -1682,6 +1683,12 @@ top_sala_res <- sala_cell_priorities %>%
   filter(is.na(MPA))
 
 
+basemap <- local_cell_priorities %>% 
+  mutate(  coord = paste(lon,lat, sep = '-')) %>% 
+   sf::st_as_sf(coords = c("lon", "lat"),
+               crs = sf::st_crs(land_shp_moll))
+  
+
 
 top_upsides_res <- local_cell_priorities %>% 
   filter(rank <= 30) %>% 
@@ -1721,12 +1728,14 @@ compare_res <- top_sala_res %>%
 
 overlap_plot <- compare_res %>%
   ggplot() +
+  geom_sf(data = basemap, color = "aliceblue", fill = "transparent") +
   geom_tile(aes(X,Y,fill = resolution), alpha = 1) +
   geom_sf(
     data = land_shp_moll,
     fill = "black",
+    color = "transparent",
     inherit.aes = F,
-    lwd = 0.1
+    lwd = 0.001
   ) +
   scale_fill_viridis_d(name = "", direction = -1) + 
   scale_x_continuous(name = "") + 
@@ -1881,6 +1890,13 @@ yield_curve_plot
 ggsave(filename = file.path(results_path,"yield_curve_plot.pdf"),yield_curve_plot, height = 6, width = 4)
 ```
 
+# Title Page
+
+## Title
+
+Global Effects of Marine Protected Areas on Food Security Are Unknown
+
+## Authors
 
 Daniel Ovando*
 School of Aquatic and Fishery Sciences, University of Washington, Seattle, WA 98195
@@ -1906,22 +1922,23 @@ Alaska Fishery Science Center, National Oceanic and Atmospheric Administration, 
 \newpage
 # Main text {.unnumbered}
 
-Sala *et al.* [@sala2021] present a framework for designing and assessing the benefits of a global network of marine protected areas (MPAs) for biodiversity, carbon sequestration, and food security. However, the model used to project these benefits makes a series of insufficiently tested or justified assumptions. We show that a more defensible model greatly alters the map of priority MPA areas and reduces food benefits by  `r percent(-(k_peak$NetworkResult[k_peak$resolution == "Regional"] - k_peak$NetworkResult[k_peak$resolution == "Global"]) / k_peak$NetworkResult[k_peak$resolution == "Global"])`. 
 
-We agree with Sala *et al.* that MPAs can have an important role to play in managing and conserving marine ecosystems. We also recognize the value of global policy assessments that must often sacrifice precision for scope. But, we are concerned that the model used in Sala *et al.* does not present a reliable assessment of the potential role or design of MPAs for benefiting fisheries yields, and by extension it is not a reliable foundation for the broader assessment of the role of MPAs in achieving multiple objectives of "marine conservation, food security and climate action" [@sala2021].
+<!-- *The opening paragraph should be recast in four short sentences. The first sentence sets the scene; the second summarizes the results of the Nature paper under discussion; the third presents your contradictory view/results; and the fourth states the implications.* -->
 
-Sala *et al.*’s results depend on the same model as Cabral *et al.* [@cabral2020] (see Ovando *et al.* [@ovando2021] for a critique of this model), which assumes that density dependence is a function of total pooled population size, independent of how fish are distributed in space, and that “unassessed” fish stocks (stocks not represented in the RAM Legacy Stock Assessment Database) of a given species are a single interconnected population. These two assumptions generate results that are neither consistent with their source material [@costello2016] nor ecologically reasonable. The global distribution assumed for unassessed stocks implies that MPAs around Australia can increase catches along the shores of North America [@ovando2021], or that  a single population an be affected both by MPAs in the Caribbean and in the waters off of China (Fig.S2). When movement rates are low under the assumption of pooled density dependence, fishing *harder* outside an MPA can produce *higher biomass* inside the MPA than there would have been in the absence of any fishing at all (Fig.S5). 
+Marine Protected Areas (MPAs) can be a powerful conservation tool, and can positively or negatively affect food security. Sala *et al.* [@sala2021] estimate the impacts of a global network of MPAs designed for biodiversity, carbon sequestration, and food security. But, the model used to project these benefits depends on a series of unrealistic and insufficiently tested assumptions that are inconsistent with its source material; Using a more realistic model dramatically changes the map of priority MPA areas and reduces potential food benefits by  `r percent(-(k_peak$NetworkResult[k_peak$resolution == "Regional"] - k_peak$NetworkResult[k_peak$resolution == "Global"]) / k_peak$NetworkResult[k_peak$resolution == "Global"])`. This extreme sensitivity in the outcomes of MPA networks to highly uncertain parameters and modeling assumptions implies that that the true global effects of MPAs on food security remain unknown.  
 
-To assess the impact of these strong assumptions, we ran a version of Sala *et al.*'s analysis changing three key assumptions: the spatial resolution of the simulated populations, the population dynamics model used, and the nature of density dependence. The food projections made by Sala *et al.* are based on estimates of fishing mortality rates and life history values provided by Costello *et al.* [@costello2016] . Costello *et al.* assume that for each unassessed taxonomic group, separate stock units exist within a specific country's waters within an FAO major statistical area, except for highly migratory unassessed stocks, which are assumed to be well-mixed within FAO major statistical areas. Costello *et al.* based their results on a Pella-Tomlinson [@pella1969] population model. Sala *et al.* aggregated all the individual unassessed stocks assumed by Costello *et al.* into one global stock per species, and converted the population dynamics model to a logistic growth equation. We call these assumptions made by Sala *et al.* the *Global* scenario. 
+We agree with Sala *et al.* that MPAs can have an important role to play in managing and conserving marine ecosystems. But, we are concerned that the model used in Sala *et al.* does not present a reliable assessment of the effect of MPAs on fisheries yields, and by extension it is not a reliable foundation for the broader assessment of the role of MPAs in achieving multiple objectives of marine conservation, food security and climate action [@sala2021]. Sala *et al.*’s results depend on the same model as Cabral *et al.* [@cabral2020] (see Ovando *et al.* [@ovando2021]), which assumes that density dependence is a function of total pooled population size, independent of how fish are distributed in space, and that “unassessed” fish stocks (stocks not represented in the RAM Legacy Stock Assessment Database, RLSADB) of a given species are a single global interconnected population. These two assumptions generate results that are neither consistent with their source material [@costello2016] nor ecologically reasonable. The global distribution assumed for unassessed stocks implies that MPAs around Australia can increase catches along the shores of North America [@ovando2021], or that a single fish population can be affected both by MPAs in the Caribbean and in the waters off of China (Fig.S2). When movement rates are low under the assumption of pooled density dependence, fishing harder outside an MPA can produce higher biomass inside the MPA than there would have been in the absence of any fishing at all (Fig.S5). 
 
-We created an alternative set of results based on the same stock resolution and with the same population dynamics as Costello *et al.* [@costello2016]. We assume that density dependence (e.g., competition for food or habitat) occurs at a local scale, and then the resulting production is distributed in space through the model's movement dynamics. We call this alternative group of assumptions the *Regional* scenario. Due to discrepancies in values reported in Sala *et al.* [@sala2021] and Costello *et al.* [@costello2016], we restricted our analysis to stocks shared between the two analyses (`r nrow(MegaData)` stocks out of `r nrow(og_mega_data)`), and then adjusted the maximum sustainable yield for each stock in both analyses to match the generally lower values reported in Costello *et al.* [@costello2016], leaving a comparable set of stocks with the same total maximum sustainable yield (see Supplementary Information, SI). As a consequence, the results of the *Global* assumptions do not perfectly match those reported in @sala2021, although the overall patterns are highly similar. 
+The food projections made by Sala *et al.* are based on estimates of fishing mortality rates and life history values provided by Costello *et al.* [@costello2016] . Costello *et al.* used a  Pella-Tomlinson [@pella1969] population model and assumed that separate stock units exist inside a specific country's waters within an FAO major statistical area for each unassessed taxonomic group, except for highly mobile unassessed stocks, which are assumed to be well-mixed within FAO major statistical areas. Sala *et al.* aggregated all the individual unassessed stocks assumed by Costello *et al.* into one global stock per species and converted the underlying population dynamics model to a logistic growth equation. We call these assumptions made by Sala *et al.* the *Global* scenario. 
+
+To assess the impact of these strong choices, we ran a version of Sala *et al.*'s analysis changing three key assumptions to be consistent with Costello *et al.* [@costello2016]: the spatial resolution of the simulated populations, the population dynamics model used, and the nature of density dependence. For our base results we assume that density dependence (e.g., competition for food or habitat) occurs at a local scale, with MPAs providing spillover of fish biomass to fished areas through the model's movement dynamics. We call this alternative group of assumptions the *Regional* scenario. 
 
 <!-- We emphasize that the point of this exercise is to demonstrate the difference between the two assumptions, not the absolute values.  -->
 
 <!-- Due to discrepancies in values reported in Sala *et al.* [@sala2021] and Costello *et al.* [@costello2016] (see SI), the potential yields and included fisheries differ between Sala *et al.* [@sala2021] and Costello *et al.* [@costello2016].  -->
 
 
-```{r yield-summar}
+```{r yield-summary}
 
 global_k_dist <- ShortCoord_Sort %>% 
   arrange(desc(k)) %>% 
@@ -1959,32 +1976,33 @@ p_usa_local <- percent(p_protected_data$p_cells_top_30[p_protected_data$iso3c_na
 
 <!-- Sala *et al.* presented their results as function of the fraction of ocean surface protected. However, under the assumptions of their model, for the subset of stocks considered here 90% of the ocean's carrying capacity exists in `r k_loc` of the cells. While the exact numbers will vary depending on stocks included, this exercise demonstrates the sensitivity of the food provision potential of MPAs to the key assumptions explored here. -->
 
-Under the *Global* assumptions, global food production is maximized with an MPA network covering `r global_peak` of carrying capacity, which can be achieved by protecting `r global_space_peak` of the ocean surface. Under the *Regional* assumptions, the maximum yield benefits were much lower; `r yield_diff` of the maximum benefits of the *Global* assumptions achieved by protecting  `r local_peak` of carrying capacity (`r local_space_peak` of ocean surface) (Fig.\@ref(fig:fig-1)). The *Local* results imply that a greater portion of carrying capacity could be protected without substantially reducing global fishery catches. The *Global* results place much of the West Coast of North America in the top 30% of areas for protection, but omit much of the coastal Indian Ocean and the Coral Triangle. These results are flipped under our *Regional* assumptions. Sala *et al.*'s *Global* assumptions suggest that `r p_usa_global` of the USA's EEZ could be placed in MPAs while increasing food production, while under our *Regional* assumptions that number drops to `r p_usa_local` (Fig.\@ref(fig:fig-2)). 
+Under the *Global* assumptions, global food production is maximized with an MPA network covering `r global_peak` of carrying capacity, which can be achieved by protecting `r global_space_peak` of the ocean surface. Under the *Regional* assumptions, the maximum yield benefits were much lower; `r yield_diff` of the maximum benefits of the *Global* assumptions achieved by protecting  `r local_peak` of carrying capacity (`r local_space_peak` of ocean surface) (Fig.\@ref(fig:fig-1)). The flatter form of the curve for the *Regional* model in Fig.\@ref(fig:fig-1)a implies that a greater portion of carrying capacity could be protected without substantially reducing global fishery catches. The *Global* results place much of the West Coast of North America in the top 30% of areas for protection, but omit much of the coastal Indian Ocean and the Coral Triangle. These results are flipped under our *Regional* assumptions. Sala *et al.*'s *Global* assumptions suggest that `r p_usa_global` of the USA's EEZ could be placed in MPAs while increasing food production, while under our *Regional* assumptions that number drops to `r p_usa_local` (Fig.\@ref(fig:fig-2)). 
 
 
-
-
-<!-- Additional testing of key assumptions, such as accounting for uncertainties in underlying fishing mortality rates and movement dynamics would doubtless reveal further substantial sensitivities -->
-
-<!-- While the top 30% priority areas for protection under the two assumptions overlap in some areas, there are stark differences from the perspective of a global food-provision prioritization map. -->
-
-The assumption that density dependence occurs at local scales used in our *Regional* results is common in the MPA modeling literature, including in studies authored by members of Sala *et al.* [@hastings1999;@cabral2019;@sala2013;@sala2016;@rassweiler2012;@rassweiler2014]. We tested the sensitivity of our *Regional* results to using the "pooled" density dependence assumption used in Sala *et al.* rather than "local" density dependence; the stark contrast in both the magnitude and design of a global MPA network for food provision remains (Fig.S3-S4). 
+The assumption that density dependence occurs at local scales used in our *Regional* results is common in the MPA modeling literature, including in studies authored by members of Sala *et al.* [@hastings1999;@cabral2019;@sala2013;@sala2016;@rassweiler2012;@rassweiler2014]. We tested the sensitivity of our *Regional* results to using the same density dependence and approximation of larvae commonly dispersing outside of the MPA to fished areas as Sala *et al.*; the stark contrast in both the magnitude and design of a global MPA network for food provision remains (see Fig.S3-S4).
 
 <!-- With regards to the assumed single global population of individual unassessed species.  -->
 
-Fish often disperse over vast distances at one or more phases of their life cycle. However, the spatial extent implied by the *Global* assumption is massive for many species (Fig.S6); even for the most mobile of species, dispersal and complete mixing across entire ocean or planetary scales is rare e.g. @moore2020b. Sala *et al.*  used the the spatial stock structure provided by Free *et al.* [@free2019] for "assessed" fisheries; the footprints of these stocks are generally much smaller than the entire EEZ of a country, and of the "unassessed" fisheries (Fig.S6). It is inconsistent to use the smaller footprints from Free *et al.* [@free2019] for the assessed stocks, as Sala *et al.* have done, but then skip past the *Regional* stock structure to a much larger single global stock distribution for unassessed species. The alternative assumption made by Costello *et al.* [@costello2016] that stocks of non-migratory species are contained within country borders is not perfect, but it is more in line with best available evidence of stock sizes from Free *et al.* [@free2019].
+Fish often disperse over vast distances at one or more phases of their life cycle. However, even for the most mobile of species, dispersal and complete mixing across entire ocean or planetary scales is rare [@moore2020b]. Sala *et al.*  used the spatial stock structure provided by Free *et al.* [@free2019] for "assessed" fisheries; the footprints of these stocks are generally much smaller than the entire exclusive economic zone of a country, and of the "unassessed" fisheries (Fig.S6). It is inconsistent to use the smaller footprints from Free *et al.* [@free2019] for the assessed stocks, as Sala *et al.* have done, but then skip past the *Regional* stock structure to the much larger single global stock distribution for unassessed species assumed in the *Global* results. The alternative assumption made by Costello *et al.* [@costello2016] that stocks of non-highly-mobile species are contained within country borders is not perfect, but it is more in line with best available evidence of stock sizes from Free *et al.* [@free2019].
 
 <!-- By refining only three assumptions, we have produced a significantly different picture of the magnitude of potential food benefits from MPAs, and the location of priority areas for MPAs designed around global food provision than those presented in Sala *et al.*.  -->
 
-We are not suggesting that the *Regional* results are the “right” findings. Instead, we are demonstrating that the central results of Sala *et al* are not robust to changes to their core assumptions. Other shortcomings remain in both the *Global* and *Regional* scenarios. The spatial complexity of MPAs are simplified to a two-patch surplus production model. The effort displacement model used implies that displacing fishing effort for one species outside of an MPA has no impact on other species or habitats in the remaining fished area; these dynamics must be taken into consideration when assessing not just yield but also the biodiversity and carbon impacts of MPAs. 
+We are not suggesting that the *Regional* results are the “right” findings. Instead, we are demonstrating that the central results of Sala *et al* are not robust to changes to their core assumptions. Other shortcomings remain in both the *Global* and *Regional* scenarios. The spatial complexity of MPAs are simplified to a two-patch surplus production model. The models assume that displacing fishing effort for one species outside of an MPA has no impact on other species or habitats in the remaining fished area; these dynamics must be taken into consideration when assessing not just yield but also the biodiversity and carbon impacts of MPAs. 
 
-There clearly are places on earth where MPAs may benefit food production, particularly in areas where overfishing is prevalent. However, these locations cannot be reliably identified using the kind of global-scale model and data employed by Sala *et al.*. Refinements to their assumptions, in accordance with their own references, do not just alter results at the margin, but fundamentally change their conclusions at multiple scales. Assessments of the role of MPAs in food provision should evaluate and communicate key sensitivities and potential tradeoffs between conservation and food provision arising from alternative sets of plausible assumptions, so that communities are empowered to make decisions around MPAs with full knowledge of both the potential and uncertainty of the effects of protected areas on food security. 
+There are places on earth where MPAs can benefit food production, particularly where stocks are heavily overfished. However, these locations and the resulting food provision impacts cannot be reliably identified using the global-scale model and data employed by Sala *et al.*. Refinements to their assumptions, in accordance with their own references, do not just alter results at the margin, but fundamentally change their conclusions at multiple scales. Assessments of the role of MPAs in food provision should be wary of these issues, and clearly evaluate and communicate key sensitivities and potential tradeoffs between conservation and food provision arising from alternative sets of plausible assumptions, so that communities can make decisions around MPAs with full knowledge of both the potential and uncertainty of the effects of protected areas on food security. 
+
+## Methods {.unnumbered}
+
+Methods used in this manuscript are presented in the Supplementary Information. Due to discrepancies in values reported in Sala *et al.* [@sala2021] and Costello *et al.* [@costello2016], we restricted our analysis to stocks shared between the two analyses (`r nrow(MegaData)` stocks out of `r nrow(og_mega_data)`). We then adjusted the maximum sustainable yield (MSY) for each stock in both analyses to match the generally lower values reported in Costello *et al.* [@costello2016], leaving a comparable set of stocks with the same total MSY. As a consequence, the results of the *Global* assumptions do not perfectly match those reported in @sala2021, although the overall patterns are highly similar. 
 
 ```{r fig-1, fig.cap="Change in global yield as a function of percent of global carrying capacity (K) in MPAs (a) and percent of global ocean surface in MPAs (b). Numbers and lines point to values at the peak of each curve. *Global* assumes one global stock per unassessed species and pooled density dependence, following Sala *et al.* [@sala2021] . *Regional* indicates that stocks are modeled in the same manner as Costello *et al.* [@costello2016] with local density dependence.", include=TRUE,fig.width=3.5, fig.height=5.25}
 
+yield_curve_plot <-  yield_curve_plot + 
+  theme_cowplot(font_family = "Helvetica")
+
 ggsave(
   yield_curve_plot,
-  filename =  here(results_path, "fig_1.JPG"),
+  filename =  here(results_path, "fig_1.pdf"),
   width = unit(89, "mm"),
   height = unit(round(89 * 1.5), "mm"),
   units = "mm"
@@ -1997,13 +2015,15 @@ yield_curve_plot
 
 
 
-```{r fig-2, fig.cap="Spatial differences in MPA outcomes between alternative assumptions. Map (a) shows cells identified in the top 30% of MPAs, where color indicates which set of assumptions produced which cells, with overlapping cells indicated by the ‘Overlap’ color. Bars (b) indicate the percent of the top-ten countries' by recent FAO reported catches EEZs each assumption set projects could be placed inside food increasing MPAs. Existing MPAs omitted as these are automatically included by the model. *Global* assumes one global stock per unassessed species and pooled density dependence, following Sala *et al.* [@sala2021] . *Regional* indicates that stocks are modeled in the same manner as Costello *et al.* [@costello2016] with local density dependence.", include=TRUE, fig.width=7.2, fig.height=5}
-fig_2
+```{r fig-2, fig.cap="Spatial differences in MPA outcomes between alternative assumptions. Map (a) shows cells identified in the top 30% of MPAs, where color indicates which set of assumptions produced which cells, with overlapping cells indicated by the ‘Overlap’ color. Bars (b) indicate the percent of the top-ten countries’ (based on recent FAO reported catches) EEZs that could be placed inside food-increasing MPAs under each set of assumptions. Existing MPAs are omitted as these are automatically included by the model. *Global* assumes one global stock per unassessed species and pooled density dependence, following Sala *et al.* [@sala2021] . *Regional* indicates that stocks are modeled in the same manner as Costello *et al.* [@costello2016] with local density dependence.", include=TRUE, fig.width=7.2, fig.height=5}
 
+fig_2 <-   fig_2 + theme_cowplot(font_family = "Helvetica", font_size = 12) + theme(axis.title.x = element_text(size = 7))
+
+fig_2
 
 ggsave(
   fig_2,
-  filename =  here(results_path, "fig_2.png"),
+  filename =  here(results_path, "fig_2.pdf"),
   width = unit(183, "mm"),
   height = unit(183 * 0.7, "mm"),
   units = "mm"
@@ -2015,7 +2035,7 @@ ggsave(
 \newpage
 # Acknowledgments {.unnumbered}
 
-We thank the authors of Sala *et al.* [@sala2021] for constructive discussions in the development of this manuscript,  as well as  A. MacNeil and one anonymous reviewer for their helpful comments. 
+We thank the authors of Sala *et al.* [@sala2021] for constructive discussions in the development of this manuscript,  as well as  A. MacNeil and B. Fulton for their helpful comments. 
 
 # Data Availability {.unnumbered}
 

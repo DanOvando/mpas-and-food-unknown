@@ -33,14 +33,14 @@ rmarkdown::render(
     run_global_sala_etal = FALSE,
     local_dd = 1
   ),
-  output_file = here("results", "local_dd", "sala_etal_reply_local_dd.pdf")
+  output_file = here("results", "local_dd", "sala_etal_reply_local_dd.docx")
 )
 
 message(
-  "Finished based results with local density dependence, starting pooled density dependence"
+  "Finished results with local density dependence, starting pooled density dependence"
 )
 
-# run alternative assumptions of pooled density dependence used in sensitivity analysis paper
+# run alternative assumptions of pooled density dependence used in sensitivity analysis
 rmarkdown::render(
   "sala_etal_reply.Rmd",
   params = list(
@@ -50,14 +50,13 @@ rmarkdown::render(
     run_global_sala_etal = FALSE,
     local_dd = 0
   ),
-  output_file = here("results", "pooled_dd", "sala_etal_reply_pooled_dd.pdf")
+  output_file = here("results", "pooled_dd", "sala_etal_reply_pooled_dd.docx")
 )
 
 # knit supporting information
 
 message("Finished results, knitting Supplementary Information")
 
-# run base assumptions of local density dependence used in main paper
 rmarkdown::render(
   "sala_etal_reply_si.Rmd",
   output_file = here("results", "local_dd", "sala_etal_reply_si.pdf")
