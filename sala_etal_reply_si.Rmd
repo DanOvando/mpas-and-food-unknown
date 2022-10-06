@@ -737,23 +737,27 @@ placed inside an MPA network. This process also allows us to pick MPAs at a fine
 assumed stock structure use for unassessed stocks, with @costello2016
 indicating that the same assumptions as @costello2016 is used.
 
-## Country-Level Stocks, Pooled Density Dependence
+## Pooled Density Dependence and Larval Spillover from MPAs
 
-In order to test the sensitivity of our results to the choice of "local"
-vs "pooled" density dependence, we re-ran our analysis keeping
+In order to test the sensitivity of our results to the choice of "local" vs "pooled" density dependence, we re-ran our analysis keeping
 everything constant except for the spatial scale of density dependence,
-turning it to "pooled" instead of "local". Results differ somewhat from those produced with "local" density
-dependence presented in the main paper, but present the same general
-findings of lower potential upside, smaller proportion of carrying
-capacity protected, and a fundamentally restructured global
-prioritization map (Fig.\@ref(fig:global-yield),
-Fig.\@ref(fig:global-map))
+turning it to "pooled" instead of "local". Under pooled density dependence, growth is a function of the biomass inside and outside of biomass, in the same manner as @sala2021. 
 
-```{r global-yield,fig.cap="Change in global yield as a function of percent of global carrying capacity (K) in MPAs (a) and percent of global ocean surface in MPAs (b). Numbers and lines point to values at the peak of each curve. *Global* indicates that both stocks and density dependence are assumed to occur at global scales, following @sala2021.  *Regional* indicates that stocks are modeled in the same manner as @costello2016 with pooled density dependence in this sensitivity analysis", include=TRUE,fig.width=3.5, fig.height=5.25}
+$$growth_t \sim f\left(\frac{B_{inside_t} + B_{outside_t}}{K_{global}} \right).$$
+
+
+The "pooled" density dependence mode uses the same spatial scale of density dependence and approximation of larvae commonly dispersing outside of the MPA to fished areas as @sala2021 (see Equations in Population Models). 
+
+The results from the "pooled" assumption, which use the same assumption of pooled density dependence approximating common larval dispersal throughout the species range,  differ somewhat from those produced with "local" density dependence presented in the main paper, but present the same general findings of lower potential upside (a reduction of nearly 50%), smaller proportion of carrying
+capacity protected, and a fundamentally restructured global
+prioritization map compared to the base *Global* assumptions used in @sala2021 (Fig.\@ref(fig:global-yield),
+Fig.\@ref(fig:global-map)). 
+
+```{r global-yield,fig.cap="Change in global yield as a function of percent of global carrying capacity (K) in MPAs (a) and percent of global ocean surface in MPAs (b). Numbers and lines point to values at the peak of each curve. *Global* indicates that both stocks and density dependence are assumed to occur at global scales, following @sala2021.  *Regional* indicates that stocks are modeled in the same manner as @costello2016 with pooled density dependence in this sensitivity analysis. The 'pooled' density dependence mode uses the same pooled density dependence and approximation of larvae commonly dispersing outside of the MPA to fished areas as @sala2021", include=TRUE,fig.width=3.5, fig.height=5.25}
 knitr::include_graphics(here("results","pooled_dd","fig_1.pdf"))
 ```
 
-```{r global-map,fig.cap="Spatial differences in MPA outcomes between alternative assumptions. Map (a) shows cells identified in the top 30% of MPAs, where color indicates which set of assumptions produced which cells, with overlapping cells indicated by the ‘Overlap’ color. Bars (b) indicate the percent of the top-ten countries' (based on recent FAO reported catches) EEZs that could be placed inside food-increasing MPAs under each set of assumptions. Existing MPAs are omitted as these are automatically included by the model. *Global* assumes one global stock per unassessed species and pooled density dependence, following @sala2021 . *Regional* indicates that stocks are modeled in the same manner @costello2016 with pooled density dependence in this sensitivity analysis.", include=TRUE, fig.width=7.2, fig.height=5}
+```{r global-map,fig.cap="Spatial differences in MPA outcomes between alternative assumptions. Map (a) shows cells identified in the top 30% of MPAs, where color indicates which set of assumptions produced which cells, with overlapping cells indicated by the ‘Overlap’ color. Bars (b) indicate the percent of the top-ten countries' (based on recent FAO reported catches) EEZs that could be placed inside food-increasing MPAs under each set of assumptions. Existing MPAs are omitted as these are automatically included by the model. *Global* assumes one global stock per unassessed species and pooled density dependence, following @sala2021 . *Regional* indicates that stocks are modeled in the same manner @costello2016 with pooled density dependence in this sensitivity analysis. The 'pooled' density dependence mode uses the same pooled density dependence and approximation of larvae commonly dispersing outside of the MPA to fished areas as @sala2021", include=TRUE, fig.width=7.2, fig.height=5}
 knitr::include_graphics(here("results","pooled_dd","fig_2.pdf"))
 ```
 
