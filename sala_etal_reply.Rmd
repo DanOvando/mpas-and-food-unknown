@@ -283,7 +283,7 @@ if (get_fao_data | !dir.exists(here("data", "fao"))) {
 if (!dir.exists(here("data", "FAO_AREAS_NOCOASTLINE"))) {
  
   download.file(url = "http://www.fao.org/fishery/geoserver/fifao/ows?service=WFS&request=GetFeature&version=1.0.0&typeName=fifao:FAO_AREAS_CWP_NOCOASTLINE&outputFormat=SHAPE-ZIP",
-                destfile = here("data", "FAO_AREAS_NOCOASTLINE.zip"))
+                destfile = here("data", "FAO_AREAS_NOCOASTLINE.zip"), mode = "wb")
  
   
   unzip(

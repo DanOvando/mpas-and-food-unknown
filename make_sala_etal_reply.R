@@ -24,13 +24,22 @@ message("This takes a long time to run, like 24 hours. Go have a nice weekend ou
 
 # run base assumptions of local density dependence used in main paper
 message("Starting base results with local density dependence")
+
+
+results_path <- here("results", "local_dd")
+
+
+if (!dir.exists(results_path)){
+  dir.create(results_path, recursive = TRUE)
+}
+
 rmarkdown::render(
   "sala_etal_reply.Rmd",
   params = list(
     results_name = "local_dd",
-    divide_stocks = FALSE,
-    run_regional_sala_etal = FALSE,
-    run_global_sala_etal = FALSE,
+    divide_stocks = TRUE,
+    run_regional_sala_etal = TRUE,
+    run_global_sala_etal = TRUE,
     local_dd = 1
   ),
   output_file = here("results", "local_dd", "sala_etal_reply_local_dd.docx")
@@ -41,6 +50,15 @@ message(
 )
 
 # run alternative assumptions of pooled density dependence used in sensitivity analysis
+
+results_path <- here("results", "pooled_dd")
+
+
+if (!dir.exists(results_path)){
+  dir.create(results_path, recursive = TRUE)
+}
+
+
 rmarkdown::render(
   "sala_etal_reply.Rmd",
   params = list(
