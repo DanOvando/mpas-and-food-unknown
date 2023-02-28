@@ -1,0 +1,60 @@
+---
+title: "I Am Grumpy"
+author: "Dan"
+format: docx
+editor: visual
+---
+
+Dear Anna,
+
+Thank you for this information. We respectfully ask that you reconsider this decision and not send our manuscript out for a 4th round of reviews due to the fact that the core concern raised by Reviewer 1 (R1) is in incorrect and irrelevant to our results.
+
+This paper has now gone through three rounds of rigorous review by experts in the field since it's initial submission in July of 2021, roughly 1.5 years ago. We disagree that a 4th round that depends on both the time and attention of the reviewers and the time and collaboration of Sala et al. will produce anything of value, given in particular that the discrepancy in the equations at the core of R1's comments is not relevant as we explain below.
+
+Neither Sala et al. nor any of the reviewers tasked with evaluating this manuscript have presented an error in our current methods that we can correct. In fact, the reviewers have been generally positive of our methods and results. We agree that the difference in the food provision numbers is interesting, but unless there is an error in our methods, which again despite have access to every step of our data, code and equations no one has identified, our results stand. It is unreasonable to ask for another round of review to essentially check our work once again because Sala et al report a different number without providing supporting code, equations, or data.
+
+In brief, Reviewer 1 (R1) evaluates two claims in their response. R1's response to the first claim is clear: "Therefore the claim that 'there is zero growth once the population inside the MPA reaches carryin capacity, regardless of what is happening outside the MPA' appears to have no merit and should be removed from their \[sala et al's\] response."
+
+Your primary concern appears to be then with Claim 2, the "15% vs 46% reduction in food benefits". R1 notes a difference in the equations used in our and Sala et al's code. I believe this is the "one important difference between the two modeling approaches" that R1 and you are concerned with. We appreciate R1s careful review of this matter, and the difficulty of reviewing all of this code, but they have made a mistake here. The code and equations in question here are not used in any of our results. We provide a detailed explanation of this below, but the long and short of it is that a) R1 is comparing an equation for calculating catch outside the MPA under business as usual to an equation for calculating the live biomass outside the MPA under business as usual, which is the reason and b) both of those equations and code were actually written by Cabral et al. / Sala et al and were included in our code purely as a diagnostic check while we ported their code to run our analysis. To stress again then, the difference in the equations highlighted by R1 play **absolutely no role** in any of our results.
+
+Given then that there is nothing to discuss with Sala et al. regarding this particular difference highlighted by R1, we are unclear what exactly the objective of the requested new round of collaborative review is. The core question that R1 sought to address that led them to highlight the differences in the irrelevant section of code was why we and Sala come up with different sensitives to model assumption in our runs (R1 compares the results of our "Pooled" model to the sensitivity run by Sala et al in their reply).
+
+There are three possible reasons for the discrepancy in the food provision totals referenced by R1, only one of which would support the requested new rounds of collaborative revision.
+
+1.  **Different assumptions produce difference results**. This is the simplest and most likely answer. The purpose of our analysis was to test the sensitivity of Sala et al's assumptions to some very strong and unconventional assumptions they made. When we use alternative assumptions, we get very different answers with regards to food provision, which underpins our entire argument; the results are driven by assumptions, not data, and therefore the global impacts of MPAs on food provision are unknown. Sala et al. use a different life history model and by extension different parameter values than us. From their description, they appear not to have partitioned stocks in the same manner as us (us: eez + fao area + species distribution in the same manner as Costello et al 2016, Sala et al report eez + species which is different). There are doubtless other modeling choices that were made differently, and different choices produce different results.
+2.  **We have made an error in our methods**. This is always possible. However, the discrepancy highlighted by R1 plays absolutely no role in any of our results, as we discuss in detail below. So, as always in life, there may be an error somewhere, but the equations, code, and methods have been reviewed extensively, including by Dr. Beth Fulton, widely regarded as one of the preeminent modelers of marine ecosystems in the world. In line with R1s recommendation, our code and data have been publicly available throughout this process, as clearly stated in our data availability statement. Sala et al. have had every opportunity since we first brought these issues to their attention in April of 2021 to look through our code, re-run our analyses, and look for errors should they wish. We see no reason to hold up this process further on the grounds that there may be some unidentified error in our code somewhere.
+3.  **Sala et al have made an error**. We have done our best to go through Sala et al's code throughout the 1.5+ years of this process, and have to date found no errors in their methods per say; they simply use a very particular set of assumptions that drive their results. It is possible that this discrepency is caused by a coding error on their part, but we respectfully feel that it is not our responsibility to validate the code in Sala et al. any more than we already have. If there is reason to think that there is after all this time a simple error in Sala et al.'s methods that explains the difference, then we would respectfully suggest that our reply be published while that independent problem is investigated
+
+If the discrepancy in results highlighted by R1 is due to different assumptions producing different results, as is most likely, then nothing will be gained by this new round of reviews. If the concern is that Sala et al. have made an error, we are not suggesting they did, we respectfully suggest that the publication of our reply should not depend on corrections of potential mistakes on their end. Respectfully, while we have provided all the code and data needed to reproduce all of our results at every step of the way to both the reviewers and Sala et al, we have never been provided with any of the code or equations for Sala et al's subsequent analysis, preventing us from evaluating any of their claims.
+
+This paper has now gone through three rounds of rigorous review by experts in the field since it's initial submission in July of 2021, roughly 1.5 years ago. We disagree that a 4th round that depends on both the time and attention of the reviewers and the time and collaboration of Sala et al. will produce anything of value, given in particular that the discrepancy in the equations at the core of R1's comments is not relevant.
+
+We are therefore comparing apples to oranges, and the publication of our comment should depend simply on the validity of our apples, which neither Sala et al. nor any of the reviewers appear to have any specific critiques of.
+
+Neither Sala et al. nor any of the reviewers tasked with evaluating this manuscript have presented an error in our current methods that we can correct. In fact, the reviewers have been generally positive of our methods and results. We agree that the difference in the food provision numbers is interesting, but unless there is an error in our methods, which again despite have access to every step of our data, code and equations no one has identified, our results stand. It is unreasonable to ask for another round of review to essentially check our work once again because Sala et al report a different number without providing supporting code, equations, or data.
+
+## Explanation of Why Difference in Equations Highlighted by R1 Do Not Matter 
+
+R1 appears to be referencing this code
+
+    b_outside_bau <-
+      ((m * K * (1 - R)) / (ER_redistribute * R + m)) * (1 - (ER_redistribute * (1 - R) * m) /
+                                                           ((ER_redistribute * R + m) * r))
+                                                           
+    hbau <-
+      na.omit(ER_redistribute * ((m * K * (1 - R)) / ((ER_redistribute * R) +
+                                                        m)) * (1 - ((
+                                                          ER_redistribute * (1 - R) * m
+                                                        ) / (((ER_redistribute * R) + m
+                                                        ) * r))))
+
+https://github.com/DanOvando/mpas-and-food-unknown/blob/0b42eebf1f28238b8f9c54de9aeda9197ec803b9/sala_etal_reply.Rmd#L916
+
+The code in question here are the analytical solutions to the equilibrium biomass outside the MPA under business as usual (b_outside_bau) and harvest under business as usual given MPAs (hbau), and was written by Cabral et al. and used in Sala et al. The "major difference" noted by R1 in the equations is because the first equation, at least as explained and written by Cabral et al. 2020, calculates the equilibrium catch outside the MPA. The second equation, which is missing the "proportion of exports" noticed by the reviewer, is calculating the live biomass outside the MPA, and hence is not multiplied by e_mpa. So, the two equations noted here are simply intended to produce different things, and much more importantly, **are not used in our results**
+
+In order to replicate Sala et al's methods as closely as possible, we built our analysis off of a copy off their code, which means that much of the code they wrote and use is present in our analysis.
+
+However, we make absolutely no use of these calculations in our results (to by crystal clear, the equations in question play absolutely no role in producing the 46% reduction reference in Claim 2 by the Reviewer). All of our calculations for biomass outside the MPAs and catch are produced by our sim_mpa function called at various points in the code such as [here](https://github.com/DanOvando/mpas-and-food-unknown/blob/0b42eebf1f28238b8f9c54de9aeda9197ec803b9/sala_etal_reply.Rmd#L953). A search of the code will reveal that b_outside_bau is not actually used anywhere, and the core outcome with regards to food provision under different MPA strategies, HBAU, is calculated [here](https://github.com/DanOvando/mpas-and-food-unknown/blob/0b42eebf1f28238b8f9c54de9aeda9197ec803b9/sala_etal_reply.Rmd#L975) after being produced by the sim_mpa function, which uses the equations spelled out in our supporting materials, not the equations under question by R1. 
+The actual code for the change in food provision under a given MPA network is [here](https://github.com/DanOvando/mpas-and-food-unknown/blob/0b42eebf1f28238b8f9c54de9aeda9197ec803b9/sala_etal_reply.Rmd#L1074). 
+
+As an extra precaution, we have deleted to code highlighted by R1 from the repository and re-run our results, which are attached and identical as can be seen. 

@@ -19,8 +19,8 @@ header-includes:
 params:
   results_name: ["local_dd"] 
   divide_stocks: [FALSE] 
-  run_regional_sala_etal: [FALSE] 
-  run_global_sala_etal: [FALSE] 
+  run_regional_sala_etal: [TRUE] 
+  run_global_sala_etal: [TRUE] 
   local_dd: [1]
 ---
 
@@ -101,10 +101,13 @@ if (!dir.exists(results_path)){
 
 # download data used in Cabral et al. 2020
 if (!dir.exists("data")) {
-  download.file(
+    options(timeout = max(600, getOption("timeout")))
+
+    download.file(
     "https://figshare.com/ndownloader/files/35063767",
     destfile = here("tmp.zip"),
-    mode = "wb"
+    mode = "wb",
+    timeout = 
   )
   
   unzip(here("tmp.zip")) 
@@ -174,9 +177,16 @@ if (get_fao_data | !dir.exists(here("data", "fao"))) {
   sp_groups <-
     read_csv(here("data", "fao", "CL_FI_SPECIES_GROUPS.csv")) %>%
     janitor::clean_names() %>%
-    select(x3alpha_code:identifier, contains("_en"), author:cpc_group) %>%
+    select(scientific_name,x3alpha_code:identifier, contains("_en"), author:cpc_group) %>%
     rename(species_name_en = name_en) %>%
-    left_join(asfis, by = c("taxonomic_code" = "taxocode"))
+    left_join(asfis, by = c("scientific_name"))
+  
+    # sp_groups <-
+    # read_csv(here("data", "fao", "CL_FI_SPECIES_GROUPS.csv")) %>%
+    # janitor::clean_names() %>%
+    # select(x3alpha_code:identifier, contains("_en"), author:cpc_group) %>%
+    # rename(species_name_en = name_en) %>%
+    # left_join(asfis, by = c("taxonomic_code" = "taxocode"))
   
   # sp_groups %>%
   #   group_by(x3alpha_code) %>%
