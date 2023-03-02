@@ -19,8 +19,8 @@ header-includes:
 params:
   results_name: ["local_dd"] 
   divide_stocks: [FALSE] 
-  run_regional_sala_etal: [TRUE] 
-  run_global_sala_etal: [TRUE] 
+  run_regional_sala_etal: [FALSE] 
+  run_global_sala_etal: [FALSE] 
   local_dd: [1]
 ---
 
@@ -923,10 +923,6 @@ R <- pmax(1e-6,pmin(0.999,rowSums(KprotectedPerCell_Library[, which(MPAselect ==
 
 ER_redistribute <- pmin(0.999,1 - (1 - ER) ^ (1 / (1 - R)))
 
-b_outside_bau <-
-  ((m * K * (1 - R)) / (ER_redistribute * R + m)) * (1 - (ER_redistribute * (1 - R) * m) /
-                                                       ((ER_redistribute * R + m) * r))
-
 hbau <-
   na.omit(ER_redistribute * ((m * K * (1 - R)) / ((ER_redistribute * R) +
                                                     m)) * (1 - ((
@@ -979,8 +975,6 @@ if (any(is.na(bau))){
 
 bad <- which(is.na(bau))
 sum(bau) / HBAU
-
-# sum(bau$outside_b) /  sum(b_outside_bau)
 
 HBAU <- sum(bau)
 
@@ -1424,17 +1418,17 @@ MPAselect<-MPAselect0
 R<-rowSums(KprotectedPerCell_Library[,which(MPAselect==1),drop=FALSE])
 ER_redistribute<-1-(1-ER)^(1/(1-R))
 
-
-b_outside_bau <-
-  ((m * K * (1 - R)) / (ER_redistribute * R + m)) * (1 - (ER_redistribute * (1 - R) * m) /
-                                                       ((ER_redistribute + m) * r)) 
-
 hbau<-na.omit(ER_redistribute*((m*K*(1-R))/((ER_redistribute*R)+m))*(1-((ER_redistribute*(1-R)*m)/(((ER_redistribute*R)+m)*r))))
-hbau<-hbau*(hbau>0)
+
+hbau<-hbau*(hbau>0) 
+
 HBAU<-sum(hbau)
+ 
 HBAU
 
 # PICKSIZE<-100 #number of MPA sites selected
+
+
 
 nmax<-floor(length(celltoiterate)/PICKSIZE)
 nmax #this is the number of iterations needed for PICKSIZE at a time!
@@ -2003,7 +1997,7 @@ There are places on earth where MPAs can benefit food production, particularly w
 
 ## Methods {.unnumbered}
 
-Methods used in this manuscript are presented in the Supplementary Information. Due to discrepancies in values reported in Sala *et al.* [@sala2021] and Costello *et al.* [@costello2016], we restricted our analysis to stocks shared between the two analyses (`r nrow(MegaData)` stocks out of `r nrow(og_mega_data)`). We then adjusted the maximum sustainable yield (MSY) for each stock in both analyses to match the generally lower values reported in Costello *et al.* [@costello2016], leaving a comparable set of stocks with the same total MSY. As a consequence, the results of the *Global* assumptions do not perfectly match those reported in @sala2021, although the overall patterns are highly similar. 
+Methods used in this manuscript are presented in the Supplementary Information. Due to discrepancies in values reported in Sala *et al.* [@sala2021] and Costello *et al.* [@costello2016], we restricted our analysis to stocks shared between the two analyses (`r nrow(MegaData)` stocks as defined by Sala *et al.* out of `r nrow(og_mega_data)`). We then adjusted the maximum sustainable yield (MSY) for each stock in both analyses to match the generally lower values reported in Costello *et al.* [@costello2016], leaving a comparable set of stocks with the same total MSY. As a consequence, the results of the *Global* assumptions do not perfectly match those reported in @sala2021, although the overall patterns are highly similar. 
 
 ```{r fig-1, fig.cap="Change in global yield as a function of percent of global carrying capacity (K) in MPAs (a) and percent of global ocean surface in MPAs (b). Numbers and lines point to values at the peak of each curve. *Global* assumes one global stock per unassessed species and pooled density dependence, following Sala *et al.* [@sala2021] . *Regional* indicates that stocks are modeled in the same manner as Costello *et al.* [@costello2016] with local density dependence.", include=TRUE,fig.width=3.5, fig.height=5.25}
 
@@ -2045,7 +2039,7 @@ ggsave(
 \newpage
 # Acknowledgments {.unnumbered}
 
-We thank the authors of Sala *et al.* [@sala2021] for constructive discussions in the development of this manuscript,  as well as  A. MacNeil and B. Fulton for their helpful comments. 
+We thank the authors of Sala *et al.* [@sala2021] for constructive discussions in the development of this manuscript,  as well as  A. MacNeil, B. Fulton, and two anonymous reviewers for their helpful comments. 
 
 # Data Availability {.unnumbered}
 

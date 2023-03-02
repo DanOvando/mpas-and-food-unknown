@@ -49,6 +49,7 @@ NumericVector sim_mpa(NumericVector r, NumericVector k, NumericVector m, Numeric
     
   for (int t = 0; t < years; t++){
     
+    // Pella-Tomlinsson Toggle
     if (pt == 0){
     
     if (local_dd == 1){
@@ -88,14 +89,10 @@ NumericVector sim_mpa(NumericVector r, NumericVector k, NumericVector m, Numeric
         
         growth_mult[growth_mult > 1] = 1;
         
-        // Rcpp::Rcout << "inside is " << last_inside_b << std::endl;
         inside_b =
           last_inside_b +  growth_mult * ((phi + 1) / phi) * r * last_inside_b * (1 - pow(last_inside_b / (k * p_mpa),phi)) - mu * (last_inside_b - (p_mpa / (1 - p_mpa)) * last_outside_b);
         
         inside_b[inside_b < 0] = 1e-6;
-        
-        
-        // Rcpp::Rcout << "outside is " << last_outside_b << std::endl;
         
         growth_mult =  last_outside_b / (plim * k * (1  - p_mpa));
         // 

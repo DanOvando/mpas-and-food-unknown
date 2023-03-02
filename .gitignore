@@ -8,6 +8,7 @@ data/*
 *.DS_Store
 *.pdf
 *_cache/
+ovando_etal_appeal.qmd
 results/
 results/*/mpa_v_harvest.rds
 results/*/teleport-map.png

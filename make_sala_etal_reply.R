@@ -37,9 +37,9 @@ rmarkdown::render(
   "sala_etal_reply.Rmd",
   params = list(
     results_name = "local_dd",
-    divide_stocks = TRUE,
-    run_regional_sala_etal = TRUE,
-    run_global_sala_etal = TRUE,
+    divide_stocks = FALSE,
+    run_regional_sala_etal = FALSE,
+    run_global_sala_etal = FALSE,
     local_dd = 1
   ),
   output_file = here("results", "local_dd", "sala_etal_reply_local_dd.docx")
@@ -64,8 +64,8 @@ rmarkdown::render(
   params = list(
     results_name = "pooled_dd",
     divide_stocks = FALSE,
-    run_regional_sala_etal = FALSE,
-    run_global_sala_etal = FALSE,
+    run_regional_sala_etal = TRUE,
+    run_global_sala_etal = TRUE,
     local_dd = 0
   ),
   output_file = here("results", "pooled_dd", "sala_etal_reply_pooled_dd.docx")
