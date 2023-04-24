@@ -64,8 +64,8 @@ rmarkdown::render(
   params = list(
     results_name = "pooled_dd",
     divide_stocks = FALSE,
-    run_regional_sala_etal = TRUE,
-    run_global_sala_etal = TRUE,
+    run_regional_sala_etal = FALSE,
+    run_global_sala_etal = FALSE,
     local_dd = 0
   ),
   output_file = here("results", "pooled_dd", "sala_etal_reply_pooled_dd.docx")
