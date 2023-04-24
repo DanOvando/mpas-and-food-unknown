@@ -201,7 +201,7 @@ The core methods of @costello2016 are:
 as usual" stock status from @costello2016 to make their projections.
 However, they make two key modifications:
 
-1.  They aggregate **all** of the individual unassessed stocks assumed
+1.  They aggregate all of the individual unassessed stocks assumed
     by @costello2016 into one global stock per species.
 
 2.  They use a Schaefer (logistic) population model rather than a
@@ -757,7 +757,7 @@ Fig.\@ref(fig:global-map)).
 knitr::include_graphics(here("results","pooled_dd","fig_1.pdf"))
 ```
 
-```{r global-map,fig.cap="Spatial differences in MPA outcomes between alternative assumptions. Map (a) shows cells identified in the top 30% of MPAs, where color indicates which set of assumptions produced which cells, with overlapping cells indicated by the ‘Overlap’ color. Bars (b) indicate the percent of the top-ten countries' (based on recent FAO reported catches) EEZs that could be placed inside food-increasing MPAs under each set of assumptions. Existing MPAs are omitted as these are automatically included by the model. *Global* assumes one global stock per unassessed species and pooled density dependence, following @sala2021 . *Regional* indicates that stocks are modeled in the same manner @costello2016 with pooled density dependence in this sensitivity analysis. The 'pooled' density dependence mode uses the same pooled density dependence and approximation of larvae commonly dispersing outside of the MPA to fished areas as @sala2021", include=TRUE, fig.width=7.2, fig.height=5}
+```{r global-map,fig.cap="Spatial differences in MPA outcomes between alternative assumptions. Map (a) shows cells identified in the top 30% of MPAs, where color indicates which set of assumptions produced which cells, with overlapping cells indicated by the ‘Overlap’ color. Points (b) indicate the percent of the top-ten countries' (based on recent FAO reported catches) EEZs that could be placed inside food-increasing MPAs under each set of assumptions. Existing MPAs are omitted as these are automatically included by the model. *Global* assumes one global stock per unassessed species and pooled density dependence, following @sala2021 . *Regional* indicates that stocks are modeled in the same manner @costello2016 with pooled density dependence in this sensitivity analysis. The 'pooled' density dependence mode uses the same pooled density dependence and approximation of larvae commonly dispersing outside of the MPA to fished areas as @sala2021", include=TRUE, fig.width=7.2, fig.height=5}
 knitr::include_graphics(here("results","pooled_dd","fig_2.pdf"))
 ```
 
