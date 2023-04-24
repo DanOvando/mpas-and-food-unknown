@@ -1824,7 +1824,7 @@ p_protected_plot <- p_protected_data %>%
   geom_segment(data =p_protected_segments, aes(x = iso3c_name, xend = iso3c_name, y = Global, yend = Regional)) +
     geom_point(aes(reorder(iso3c_name,p_benefit), p_benefit * 100, fill = resolution), shape = 21, size = 4, show.legend = FALSE) + 
   scale_y_continuous(
-                     name = "% EEZ in Food Increasing MPA",
+                     name = "% EEZ in food-increasing MPA",
                      expand = c(0,NA),
                      limits = c(0,55)) + 
   scale_x_discrete(name = '') + 
@@ -1870,10 +1870,10 @@ k_plot <- k_series %>%
   geom_hline(aes(yintercept = 0), linetype = 1)+
   geom_line(size = 1) + 
   scale_x_continuous(labels = percent, name = "% of K in MPA") + 
-  scale_y_continuous(name = "Change in Global Yield (MMT)") + 
+  scale_y_continuous(name = "Change in global yield (MMT)") + 
   geom_label_repel(data = k_peak, aes(percent_k, yield_effect, label = round(yield_effect,2)),size = 4,box.padding = 4, show.legend = FALSE, fill = "darkslategray", min.segment.length = 0) + 
   labs(title = "(a)") + 
-  scale_color_manual(name = "Unassessed Stock Structure",values = rev(viridis_pal()(3))[1:2]) + 
+  scale_color_manual(name = "Unassessed stock structure",values = rev(viridis_pal()(3))[1:2]) + 
   theme(legend.position = "top", 
         legend.title = element_text(size = 8),
         legend.text = element_text(size = 6),
@@ -1887,7 +1887,7 @@ space_plot <- k_series %>%
   geom_vline(aes(xintercept = 0.3), linetype = 2)+
   geom_hline(aes(yintercept = 0), linetype = 1)+
   geom_line(size = 1) + 
-  scale_x_continuous(labels = percent, name = "% of Cells in MPA") + 
+  scale_x_continuous(labels = percent, name = "% of cells in MPA") + 
   scale_y_continuous(name = "") + 
   geom_label_repel(data = k_peak, aes(rank / 100, yield_effect, label = round(yield_effect,2)),size = 4, show.legend = FALSE, fill = "darkslategray", min.segment.length = 0) + labs(title = "(b)") + 
   scale_color_manual(name = "",values = rev(viridis_pal()(3))[1:2],
@@ -2010,7 +2010,7 @@ There are places on earth where MPAs can benefit food production, particularly w
 
 Methods are in the Supplementary Information. Due to discrepancies in values between Sala *et al.* [@sala2021] and Costello *et al.* [@costello2016], we restricted our analysis to stocks found in both analyses (`r nrow(MegaData)` stocks as defined by @sala2021 out of `r nrow(og_mega_data)`). We then adjusted the maximum sustainable yield (MSY) for each stock to match the generally lower values reported in Costello *et al.* [@costello2016], leaving a set of stocks with the same total MSY in both the *Regional* and *Global* analyses. As a consequence of these required adjustments, the *Global* results are not exactly the same as those reported in @sala2021, although they are highly similar. 
 
-```{r fig-1, fig.cap="Change in global fishery yields as a function of percent of global carrying capacity (K) in MPAs (a) and percent of global ocean surface in MPAs (b). Numbers and lines point to values at the peak of each curve. *Global* assumes one global stock per unassessed species and pooled density dependence, following Sala *et al.* [@sala2021] . *Regional* indicates that stocks are modeled in the same manner as Costello *et al.* [@costello2016] with local density dependence.", include=TRUE,fig.width=3.5, fig.height=5.25}
+```{r fig-1, fig.cap="Change in global fishery yields in millions of metric tons (MMT) as a function of percent of global carrying capacity (K) in MPAs (a) and percent of global ocean surface in MPAs (b). Numbers and lines point to values at the peak of each curve. *Global* assumes one global stock per unassessed species and pooled density dependence, following Sala *et al.* [@sala2021] . *Regional* indicates that stocks are modeled in the same manner as Costello *et al.* [@costello2016] with local density dependence.", include=TRUE,fig.width=3.5, fig.height=5.25}
 
 ggsave(
   yield_curve_plot,
@@ -2027,7 +2027,7 @@ yield_curve_plot
 
 
 
-```{r fig-2, fig.cap="Spatial differences in MPA outcomes between alternative assumptions. Map (a) shows cells identified in the top 30% of MPAs, where color indicates which set of assumptions produced which cells, with overlapping cells indicated by the ‘Overlap’ color. Points (b) indicate the percent of the top-ten countries’ (based on recent FAO reported catches) EEZs that could be placed inside food-increasing MPAs under each set of assumptions. Existing MPAs are omitted as these are automatically included by the model. *Global* assumes one global stock per unassessed species and pooled density dependence, following Sala *et al.* [@sala2021] . *Regional* indicates that stocks are modeled in the same manner as Costello *et al.* [@costello2016] with local density dependence.", include=TRUE, fig.width=7.2, fig.height=5}
+```{r fig-2, fig.cap="Spatial differences in MPA outcomes between alternative assumptions. Map (a) shows cells identified in the top 30% of MPAs, where color indicates which set of assumptions produced which cells, with overlapping cells indicated by the ‘Overlap’ color. Points (b) indicate the percent of the top-ten countries’ (based on recent FAO reported catches) exclusive economic zone (EEZ) that could be placed inside food-increasing MPAs under each set of assumptions. Existing MPAs are omitted as these are automatically included by the model. *Global* assumes one global stock per unassessed species and pooled density dependence, following Sala *et al.* [@sala2021] . *Regional* indicates that stocks are modeled in the same manner as Costello *et al.* [@costello2016] with local density dependence.", include=TRUE, fig.width=7.2, fig.height=5}
 
 fig_2 <-   fig_2 + theme_cowplot(font_family = "Helvetica", font_size = 12) + theme(axis.title.x = element_text(size = 7))
 
