@@ -1012,10 +1012,9 @@
     "renv": {
       "Package": "renv",
       "Version": "0.17.3",
-      "OS_type": NA,
+      "OS_type": null,
       "Repository": "CRAN",
-      "Source": "Repository",
-      "Requirements": []
+      "Source": "Repository"
     },
     "reprex": {
       "Package": "reprex",
