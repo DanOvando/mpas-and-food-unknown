@@ -1909,7 +1909,7 @@ ggsave(filename = file.path(results_path,"yield_curve_plot.pdf"),yield_curve_plo
 
 ## Title
 
-Global Effects of Marine Protected Areas on Food Security Are Unknown
+Global effects of marine protected areas on food security are unknown
 
 ## Authors
 
