@@ -5,9 +5,9 @@ title: |
 output: 
   bookdown::word_document2:
     reference_docx: template.docx
-    number_sections: false
   bookdown::pdf_document2:
     latex_engine: xelatex
+    number_sections: false
 bibliography: references.bib
 linkcolor: blue
 urlcolor: blue
@@ -25,7 +25,7 @@ params:
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE,include = FALSE, dev = "png", dpi = 300)
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE,include = FALSE)
 set.seed(225)
 # probably don't need all these but copying from Cabral et al
 library(bookdown)
@@ -1831,7 +1831,7 @@ p_protected_plot <- p_protected_data %>%
   scale_fill_manual(values = rev(rev(viridis_pal()(3))[1:2])) +
   theme(axis.text.y = element_text(size = 8),
         axis.text.x = element_text(size = 8),
-        axis.title.x = element_text(size = 8),
+        axis.title.x = element_text(size = 10),
         plot.margin = margin(-10,5,0,0)) +
   coord_flip() + 
     labs(subtitle = "(b)")
@@ -1842,7 +1842,7 @@ p_protected_plot
 
 fig_2 <- overlap_plot +
   p_protected_plot + 
-  patchwork::plot_layout(widths = c(2.5,.75))
+  patchwork::plot_layout(widths = c(2.75,.75))
 
 ggsave(filename = file.path(results_path,"overlap_p_plot.pdf"),fig_2, height = 6, width = 8)
 fig_2
@@ -1901,7 +1901,7 @@ space_plot <- k_series %>%
         plot.caption = element_text(size = 3, color = "red")) + 
   labs(caption = glue::glue("Change in max. yield between Regional and Global : {delta_yield}"))
 
-yield_curve_plot <- (k_plot / space_plot) &  (theme_cowplot(font_family = "Helvetica") + theme(legend.position = "top", legend.title = element_text(size = 10), legend.text = element_text(size = 8),plot.caption = element_text(size = 7)))
+yield_curve_plot <- (k_plot / space_plot) &  (theme_cowplot(font_family = "Helvetica", font_size = 10) + theme(legend.position = "top", legend.title = element_text(size = 10), legend.text = element_text(size = 8),plot.caption = element_text(size = 7)))
 
 
 # yield_curve_plot
@@ -1909,13 +1909,13 @@ yield_curve_plot <- (k_plot / space_plot) &  (theme_cowplot(font_family = "Helve
 # ggsave(filename = file.path(results_path,"yield_curve_plot.pdf"),yield_curve_plot, height = 6, width = 4)
 ```
 
-# Title Page
+# Title Page  {.unnumbered}
 
-## Title
+## Title  {.unnumbered}
 
 Global effects of marine protected areas on food security are unknown
 
-## Authors
+## Authors  {.unnumbered}
 
 Daniel Ovando*
 School of Aquatic and Fishery Sciences, University of Washington, Seattle, WA 98195
@@ -2033,7 +2033,7 @@ yield_curve_plot
 
 ```{r fig-2, fig.cap="Spatial differences in MPA outcomes between alternative assumptions. Map (a) shows cells identified in the top 30% of MPAs, where color indicates which set of assumptions produced which cells, with overlapping cells indicated by the ‘Overlap’ color. Points (b) indicate the percent of the top-ten countries’ (based on recent FAO reported catches) exclusive economic zone (EEZ) that could be placed inside food-increasing MPAs under each set of assumptions. Existing MPAs are omitted as these are automatically included by the model. *Global* assumes one global stock per unassessed species and pooled density dependence, following Sala *et al.* [@sala2021] . *Regional* indicates that stocks are modeled in the same manner as Costello *et al.* [@costello2016] with local density dependence.", include=TRUE, fig.width=7.2, fig.height=5}
 
-fig_2 <-   fig_2 + theme_cowplot(font_family = "Helvetica", font_size = 12) + theme(axis.title.x = element_text(size = 7))
+fig_2 <-   fig_2 + theme_cowplot(font_family = "Helvetica", font_size = 10) + theme(axis.title.x = element_text(size = 7), axis.text.y = element_text(size = 8))
 
 fig_2
 
