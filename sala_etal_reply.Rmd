@@ -1866,12 +1866,12 @@ k_peak <- k_series %>%
 
 k_plot <- k_series %>% 
   ggplot(aes(percent_k, yield_effect, color = resolution)) + 
-  geom_vline(aes(xintercept = 0.3), linetype = 2)+
+  geom_vline(aes(xintercept = 0.3), linetype = 2, color = "tomato")+
   geom_hline(aes(yintercept = 0), linetype = 1)+
   geom_line(size = 1) + 
   scale_x_continuous(labels = percent, name = "% of K in MPA") + 
   scale_y_continuous(name = "Change in global yield (MMT)") + 
-  geom_label_repel(data = k_peak, aes(percent_k, yield_effect, label = round(yield_effect,2)),size = 4,box.padding = 4, show.legend = FALSE, fill = "darkslategray", min.segment.length = 0) + 
+  geom_text_repel(data = k_peak, aes(percent_k, yield_effect, label = round(yield_effect,2)),size = 4, show.legend = FALSE, fill = "gray30", min.segment.length = 0, color = "black", nudge_y = -15) + 
   labs(title = "(a)") + 
   scale_color_manual(name = "",values = rev(viridis_pal()(3))[1:2]) + 
   theme(legend.position = "top", 
@@ -1882,27 +1882,31 @@ k_plot <- k_series %>%
         axis.title.y = element_text(size = 10),
          axis.title.x = element_text(size = 10))
 
+delta_yield <- percent((k_peak$NetworkResult[k_peak$resolution == "Regional"] - k_peak$NetworkResult[k_peak$resolution == "Global"]) / k_peak$NetworkResult[k_peak$resolution == "Global"])
+
 space_plot <- k_series %>% 
   ggplot(aes(rank / 100, yield_effect, color = resolution)) + 
-  geom_vline(aes(xintercept = 0.3), linetype = 2)+
+  geom_vline(aes(xintercept = 0.3), linetype = 2, color = "tomato")+
   geom_hline(aes(yintercept = 0), linetype = 1)+
   geom_line(size = 1) + 
   scale_x_continuous(labels = percent, name = "% of cells in MPA") + 
   scale_y_continuous(name = "") + 
-  geom_label_repel(data = k_peak, aes(rank / 100, yield_effect, label = round(yield_effect,2)),size = 4, show.legend = FALSE, fill = "darkslategray", min.segment.length = 0) + labs(title = "(b)") + 
+  geom_text_repel(data = k_peak, aes(rank / 100, yield_effect, label = round(yield_effect,2)),size = 4, show.legend = FALSE, fill = "transparent", min.segment.length = 0, color = "black", nudge_y = -15) + labs(title = "(b)") + 
   scale_color_manual(name = "",values = rev(viridis_pal()(3))[1:2],
                      guide = "none") + 
   theme(legend.position = "top", 
         axis.text.x = element_text(size = 10),
         axis.text.y= element_text(size = 8),
-        axis.title.x = element_text(size = 10))
+        axis.title.x = element_text(size = 10),
+        plot.caption = element_text(size = 3, color = "red")) + 
+  labs(caption = glue::glue("Change in max. yield between Regional and Global : {delta_yield}"))
 
-yield_curve_plot <- (k_plot / space_plot) &  (theme_cowplot(font_family = "Helvetica") + theme(legend.position = "top", legend.title = element_text(size = 10), legend.text = element_text(size = 8)))
+yield_curve_plot <- (k_plot / space_plot) &  (theme_cowplot(font_family = "Helvetica") + theme(legend.position = "top", legend.title = element_text(size = 10), legend.text = element_text(size = 8),plot.caption = element_text(size = 7)))
 
 
-yield_curve_plot
+# yield_curve_plot
 
-ggsave(filename = file.path(results_path,"yield_curve_plot.pdf"),yield_curve_plot, height = 6, width = 4)
+# ggsave(filename = file.path(results_path,"yield_curve_plot.pdf"),yield_curve_plot, height = 6, width = 4)
 ```
 
 # Title Page
