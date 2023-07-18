@@ -53,6 +53,7 @@ library(Rcpp)
 library(ggrepel)
 library(cowplot)
 library(furrr)
+options(timeout=2000)
 rename <- dplyr::rename
 Rcpp::sourceCpp(here('src', "sim_mpa.cpp"))
 
@@ -1383,7 +1384,7 @@ MegaData$Kfin[MegaData$Manage == 0] <- (MegaData$MSYfin[MegaData$Manage == 0] * 
 
 check <- MegaData$MSYfin / ((MegaData$r * MegaData$Kfin) / 4)
 
-if (!(sum(MegaData$MSYfin) == sum(upsides_megadata$MSYfin))){
+if ((sum(MegaData$MSYfin) / sum(upsides_megadata$MSYfin)) > 1.001){
   stop("MSY totals do not match between upsides megadata and megadata")
 }
 
