@@ -42,7 +42,7 @@ rmarkdown::render(
     run_global_sala_etal = TRUE,
     local_dd = 1
   ),
-  output_file = here("results", "local_dd", "sala_etal_reply_local_dd.docx")
+  output_file = here("results", "local_dd", "sala_etal_reply_local_dd.pdf")
 )
 
 message(
@@ -68,7 +68,7 @@ rmarkdown::render(
     run_global_sala_etal = TRUE,
     local_dd = 0
   ),
-  output_file = here("results", "pooled_dd", "sala_etal_reply_pooled_dd.docx")
+  output_file = here("results", "pooled_dd", "sala_etal_reply_pooled_dd.pdf")
 )
 
 # knit supporting information

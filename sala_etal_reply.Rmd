@@ -2,12 +2,12 @@
 title: |
   | Global effects of marine protected areas 
   | on food security are unknown
-output: 
-  bookdown::word_document2:
-    reference_docx: template.docx
+output:
   bookdown::pdf_document2:
     latex_engine: xelatex
     number_sections: false
+  bookdown::word_document2:
+    reference_docx: template.docx
 bibliography: references.bib
 linkcolor: blue
 urlcolor: blue
